@@ -65,7 +65,7 @@ export const getHomeOverview = (): HomeOverview => ({
   drivingAdvice: '持續有強陣風與短暫大雨，建議非必要不要駕車上路。',
   services: [
     { id: 'traffic', name: '路況檢視', icon: '🚗', route: 'traffic' },
-    { id: 'safe-nav', name: '安全導航', icon: '🧭', route: 'traffic' },
+    { id: 'safe-nav', name: '安全導航', icon: '🧭', route: 'safeNavigation' },
     { id: 'report', name: '障礙回報', icon: '⚠️', route: 'traffic' },
     { id: 'wind', name: '風況詳情', icon: '🌪️', route: 'wind' },
     { id: 'settings', name: '個人設定', icon: '⚙️', route: 'settings' }
@@ -180,3 +180,55 @@ export const getTrafficLayerPresets = (): Record<TrafficTab['id'], TrafficLayerP
 
 export const getTrafficMapEmbedUrl = (): string =>
   'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3614.568581001418!2d121.54126917607693!3d25.045193677804056!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3442a97a5ddeea4f%3A0x1dea53c58d32e848!2z5paw5YyX6Y6u5Lit5b-DIOWPsOmdmOaWsOWMl-W6lw!5e0!3m2!1szh-TW!2stw!4v1717136400000!5m2!1szh-TW!2stw';
+
+export interface SafeRouteSegment {
+  id: string;
+  name: string;
+  windSpeed: number;
+  direction: string;
+  note: string;
+}
+
+export interface SafeNavigationData {
+  defaultStart: string;
+  defaultEnd: string;
+  segments: SafeRouteSegment[];
+  mapEmbedUrl: string;
+}
+
+export const getSafeNavigationData = (): SafeNavigationData => ({
+  defaultStart: '臺北市政府',
+  defaultEnd: '國立故宮博物院',
+  segments: [
+    {
+      id: 'sec-1',
+      name: '信義路五段 → 敦化大道',
+      windSpeed: 8.5,
+      direction: '東北風',
+      note: '建議保持 40km/h 以下，注意側風'
+    },
+    {
+      id: 'sec-2',
+      name: '民權東路 → 建國北路',
+      windSpeed: 6.2,
+      direction: '東風',
+      note: '風速穩定，可保持行車間距'
+    },
+    {
+      id: 'sec-3',
+      name: '承德路三段 → 至善路',
+      windSpeed: 10.1,
+      direction: '東北風',
+      note: '靠山邊風切較強，請降低車速'
+    },
+    {
+      id: 'sec-4',
+      name: '外雙溪橋段',
+      windSpeed: 5.1,
+      direction: '東風',
+      note: '路面濕滑，建議開啟霧燈'
+    }
+  ],
+  mapEmbedUrl:
+    'https://www.google.com/maps/embed?pb=!1m28!1m12!1m3!1d115730.42421285012!2d121.46760245590318!3d25.082775829333334!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!4m13!3e0!4m5!1s0x3442abbf4a4e1fbf%3A0xc8a2434d0491d738!2z5Y-w5YyX5biC5p2x5Y2A!3m2!1d25.0375198!2d121.5636796!4m5!1s0x3442ae91fa777e5b%3A0xfb393137f6741c0f!2z5ZyL56uL5bqt5rOV5Zyf5Z-O!3m2!1d25.1023988!2d121.5493648!5e0!3m2!1szh-TW!2stw!4v1717140000000!5m2!1szh-TW!2stw'
+});

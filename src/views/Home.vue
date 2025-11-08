@@ -44,11 +44,11 @@ const navigateTo = (routeName: string) => {
             <div>
               <p class="text-sm text-grey-500">即時風速</p>
               <div class="flex items-end gap-2">
-                <span class="text-4xl font-bold text-grey-900">{{ windInfo.speed }}</span>
+                <span class="text-2xl font-bold text-grey-900">{{ windInfo.speed }}</span>
                 <span class="text-lg text-grey-500">{{ windInfo.unit }}</span>
               </div>
             </div>
-            <div class="text-4xl">🧭</div>
+            <div class="text-2xl">🧭</div>
           </div>
           <div class="mb-2 flex items-center justify-between text-sm text-grey-600">
             <span>{{ windInfo.direction }}</span>
@@ -66,7 +66,7 @@ const navigateTo = (routeName: string) => {
           class="flex-1 basis-1/2 min-w-0 rounded-2xl bg-white p-6 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
         >
           <p class="text-sm text-grey-500">行車建議</p>
-          <h2 class="mb-3 text-2xl font-bold text-grey-900">盡可能減少外出</h2>
+          <h2 class="mb-3 text-xl font-bold text-grey-900">盡可能減少外出</h2>
           <p class="text-sm text-grey-600 leading-relaxed">
             {{ drivingAdvice }}
           </p>
@@ -74,7 +74,7 @@ const navigateTo = (routeName: string) => {
       </section>
 
       <!-- ③ 服務列表區 -->
-      <section class="rounded-2xl bg-white px-6 py-5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <section class="rounded-2xl bg-white px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <h2 class="mb-4 text-lg font-bold text-grey-900">服務列表</h2>
         <div class="service-scroll flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-5 sm:gap-3 sm:pb-0">
           <button
@@ -90,7 +90,7 @@ const navigateTo = (routeName: string) => {
       </section>
 
       <!-- ④ 路況查看區 -->
-      <section class="rounded-2xl bg-white px-6 py-5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <section class="rounded-2xl bg-white px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div class="mb-4">
           <h2 class="text-lg font-bold text-grey-900">{{ mapPreview.title }}</h2>
           <p class="text-sm text-grey-500">{{ mapPreview.updatedAt }}</p>
@@ -125,7 +125,7 @@ const navigateTo = (routeName: string) => {
       </section>
 
       <!-- ⑤ 即時訊息區 -->
-      <section class="rounded-2xl bg-white px-6 py-5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <section class="rounded-2xl bg-white px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div class="mb-4 flex flex-col gap-2">
           <h2 class="text-lg font-bold text-grey-900">即時訊息</h2>
         </div>

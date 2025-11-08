@@ -27,6 +27,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/safe',
+    name: 'safeNavigation',
+    component: () => import('@/views/SafeNavigation.vue'),
+    meta: {
+      title: '安全導航'
+    }
+  },
+  {
     path: '/test',
     name: 'test',
     component: () => import('@/views/test.vue'),
@@ -80,4 +88,3 @@ router.onError((error) => {
 });
 
 export default router;
-

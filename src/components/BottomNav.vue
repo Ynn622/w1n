@@ -7,6 +7,7 @@ const route = useRoute();
 const navItems = [
   { name: 'home', label: '首頁', icon: '🏠' },
   { name: 'traffic', label: '即時路況', icon: '🚗' },
+  { name: 'safeNavigation', label: '安全導航', icon: '🧭' },
   { name: 'wind', label: '風況資訊', icon: '🌪️' }
 ];
 
@@ -45,4 +46,3 @@ button {
   padding-bottom: env(safe-area-inset-bottom);
 }
 </style>
-
