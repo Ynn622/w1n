@@ -116,6 +116,12 @@ const mapMarkers = computed<MapMarkerDescriptor[]>(() => {
   return markers;
 });
 
+const isReportPanelOpen = ref(false);
+
+const toggleReportPanel = () => {
+  isReportPanelOpen.value = !isReportPanelOpen.value;
+};
+
 const handleMarkerClick = (marker: MapMarkerDescriptor) => {
   const issue = marker.meta?.issue as ObstacleIssueRecord | undefined;
   if (issue) {
@@ -299,6 +305,7 @@ const markIssueResolved = async (issue: ObstacleIssueRecord) => {
     }
     issue.status = 'Resolved';
     triggerToast('已完成回報');
+    await loadIssues();
   } catch (error) {
     triggerToast(
       error instanceof Error ? `標記失敗：${error.message}` : '無法更新狀態，請稍後再試',
@@ -310,6 +317,7 @@ const markIssueResolved = async (issue: ObstacleIssueRecord) => {
 };
 
 onMounted(() => {
+  requestUserLocation();
   loadIssues();
 });
 
@@ -478,87 +486,111 @@ watch(
 
       <!-- 障礙位置 + 類型 + 問題描述 -->
       <section class="rounded-2xl border border-grey-100 bg-white px-4 py-4 shadow-sm">
-        <div class="space-y-6">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between rounded-2xl bg-grey-50/80 px-4 py-3 text-left"
+          @click="toggleReportPanel"
+        >
           <div>
-            <div class="mb-2 flex items-center justify-between">
-              <h2 class="text-lg font-bold text-grey-900">障礙位置</h2>
-              <button
-                type="button"
-                class="text-xs font-semibold text-primary-500"
-                @click="requestUserLocation"
-                :disabled="isLocating"
-              >
-                {{ isLocating ? '定位中...' : '重新取得位置' }}
-              </button>
-            </div>
-            <input
-              v-model="locationInput"
-              type="text"
-              class="w-full rounded-xl border border-grey-200 px-4 py-3 text-sm text-grey-800 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
-              placeholder="請輸入障礙所在地址或地標"
-            />
-            <p class="mt-1 text-xs text-grey-500">
-              預設為目前定位；可自行調整以更精準描述位置。
+            <p class="text-lg font-bold text-grey-900">障礙回報區</p>
+            <p class="text-xs text-grey-500">
+              {{
+                isReportPanelOpen
+                  ? '填寫障礙位置、類型與描述，協助調度'
+                  : '點擊展開以填寫障礙位置、類型與描述'
+              }}
             </p>
           </div>
-
-          <div>
-            <div class="mb-3 flex items-center justify-between">
-              <h2 class="text-lg font-bold text-grey-900">障礙類型</h2>
-              <span class="text-xs font-semibold text-primary-500">
-                請選擇一種類型
-              </span>
-            </div>
-            <div class="type-scroll flex gap-3 overflow-x-auto pb-1">
-              <button
-                v-for="type in obstacleTypes"
-                :key="type.id"
-                type="button"
-                class="flex min-w-[180px] flex-1 items-center gap-3 rounded-2xl border px-4 py-4 text-left shadow-sm transition"
-                :style="getTypeStyle(type, isSelected(type.id))"
-                @click="toggleType(type.id)"
-              >
-                <span
-                  class="h-12 w-12 flex items-center justify-center rounded-full shadow-inner transition-all duration-200"
-                  :style="getIconRingStyle(type, isSelected(type.id))"
+          <span
+            class="text-sm font-semibold text-primary-500 transition-transform duration-200"
+            :class="{ 'rotate-180': isReportPanelOpen }"
+          >
+            ⌃
+          </span>
+        </button>
+        <Transition name="collapse">
+          <div v-show="isReportPanelOpen" class="mt-5 space-y-6 overflow-hidden">
+            <div>
+              <div class="mb-2 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-grey-900">障礙位置</h2>
+                <button
+                  type="button"
+                  class="text-xs font-semibold text-primary-500"
+                  @click="requestUserLocation"
+                  :disabled="isLocating"
                 >
-                  <img
-                    :src="obstacleIconMap[type.id]"
-                    :alt="type.label"
-                    class="h-8 w-8 object-contain"
-                  />
-                </span>
-                <div class="flex flex-col">
-                  <p class="text-sm font-semibold text-grey-900">{{ type.label }}</p>
-                  <p v-if="isSelected(type.id)" class="text-xs text-grey-600">已選取</p>
-                  <p v-else class="text-xs text-grey-500">點擊選取</p>
-                </div>
-              </button>
+                  {{ isLocating ? '定位中...' : '重新取得位置' }}
+                </button>
+              </div>
+              <input
+                v-model="locationInput"
+                type="text"
+                class="w-full rounded-xl border border-grey-200 px-4 py-3 text-sm text-grey-800 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                placeholder="請輸入障礙所在地址或地標"
+              />
+              <p class="mt-1 text-xs text-grey-500">
+                預設為目前定位；可自行調整以更精準描述位置。
+              </p>
             </div>
-          </div>
 
-          <div class="rounded-2xl border border-dashed border-grey-200 p-4">
-            <div class="mb-2 flex items-center justify-between">
-              <h2 class="text-lg font-bold text-grey-900">問題描述</h2>
-              <span class="text-xs text-grey-500">{{ description.length }}/200</span>
+            <div>
+              <div class="mb-3 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-grey-900">障礙類型</h2>
+                <span class="text-xs font-semibold text-primary-500">
+                  請選擇一種類型
+                </span>
+              </div>
+              <div class="type-scroll flex gap-3 overflow-x-auto pb-1">
+                <button
+                  v-for="type in obstacleTypes"
+                  :key="type.id"
+                  type="button"
+                  class="flex min-w-[180px] flex-1 items-center gap-3 rounded-2xl border px-4 py-4 text-left shadow-sm transition"
+                  :style="getTypeStyle(type, isSelected(type.id))"
+                  @click="toggleType(type.id)"
+                >
+                  <span
+                    class="h-12 w-12 flex items-center justify-center rounded-full shadow-inner transition-all duration-200"
+                    :style="getIconRingStyle(type, isSelected(type.id))"
+                  >
+                    <img
+                      :src="obstacleIconMap[type.id]"
+                      :alt="type.label"
+                      class="h-8 w-8 object-contain"
+                    />
+                  </span>
+                  <div class="flex flex-col">
+                    <p class="text-sm font-semibold text-grey-900">{{ type.label }}</p>
+                    <p v-if="isSelected(type.id)" class="text-xs text-grey-600">已選取</p>
+                    <p v-else class="text-xs text-grey-500">點擊選取</p>
+                  </div>
+                </button>
+              </div>
             </div>
-            <textarea
-              v-model="description"
-              rows="5"
-              maxlength="200"
-              class="w-full rounded-xl border border-grey-200 p-3 text-sm text-grey-800 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
-              placeholder="請描述發生時間、影響範圍與目前狀態..."
-            ></textarea>
-            <p class="mt-2 text-xs text-grey-500">
-              完整描述有助於研判處理順序，亦可補充現場聯絡方式。
-            </p>
-            <p class="text-xs font-semibold text-red-500">描述至少 8 個字才能送出。</p>
+
+            <div class="rounded-2xl border border-dashed border-grey-200 p-4">
+              <div class="mb-2 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-grey-900">問題描述</h2>
+                <span class="text-xs text-grey-500">{{ description.length }}/200</span>
+              </div>
+              <textarea
+                v-model="description"
+                rows="5"
+                maxlength="200"
+                class="w-full rounded-xl border border-grey-200 p-3 text-sm text-grey-800 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                placeholder="請描述發生時間、影響範圍與目前狀態..."
+              ></textarea>
+              <p class="mt-2 text-xs text-grey-500">
+                完整描述有助於研判處理順序，亦可補充現場聯絡方式。
+              </p>
+              <p class="text-xs font-semibold text-red-500">描述至少 8 個字才能送出。</p>
+            </div>
           </div>
-        </div>
+        </Transition>
       </section>
 
       <!-- 提交按鈕區 -->
-      <section class="rounded-2xl bg-white px-4 py-4 shadow-sm">
+      <section v-show="isReportPanelOpen" class="rounded-2xl bg-white px-4 py-4 shadow-sm">
         <div class="flex flex-col gap-3">
           <div class="grid grid-cols-2 gap-3">
             <Button
@@ -614,6 +646,23 @@ watch(
 .toast-leave-to {
   opacity: 0;
   transform: translateY(12px);
+}
+
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  max-height: 2000px;
+  opacity: 1;
 }
 
 .issue-panel-enter-active,

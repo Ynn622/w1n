@@ -70,6 +70,7 @@ const windInfoDisplay = computed<WindInfo>(() => {
 const newsList = ref(homeOverview.newsList);
 const previewNews = computed(() => newsList.value.slice(0, 2));
 const expandedNewsDescriptions = ref<Set<number>>(new Set());
+const expandedPreviewDescriptions = ref<Set<number>>(new Set());
 const locationLabel = ref(location);
 const isLocating = ref(false);
 const locationError = ref<string | null>(null);
@@ -269,6 +270,7 @@ const openNewsModal = () => {
 const closeNewsModal = () => {
   isNewsModalOpen.value = false;
   expandedNewsDescriptions.value = new Set();
+  expandedPreviewDescriptions.value = new Set();
 };
 
 const splitLines = (value?: string) => {
@@ -295,6 +297,23 @@ const expandDescription = (id: number) => {
   const next = new Set(expandedNewsDescriptions.value);
   next.add(id);
   expandedNewsDescriptions.value = next;
+};
+
+const getPreviewDescriptionLines = (id: number, description?: string) => {
+  const lines = splitLines(description);
+  return expandedPreviewDescriptions.value.has(id) ? lines : lines.slice(0, 2);
+};
+
+const canShowMorePreviewDescription = (id: number, description?: string) =>
+  !expandedPreviewDescriptions.value.has(id) && splitLines(description).length > 2;
+
+const expandPreviewDescription = (id: number) => {
+  if (expandedPreviewDescriptions.value.has(id)) {
+    return;
+  }
+  const next = new Set(expandedPreviewDescriptions.value);
+  next.add(id);
+  expandedPreviewDescriptions.value = next;
 };
 
 const openMapInGoogle = () => {
@@ -382,6 +401,8 @@ const loadPoliceNews = async () => {
     const latest = await fetchPoliceNews();
     if (latest.length) {
       newsList.value = latest;
+      expandedNewsDescriptions.value = new Set();
+      expandedPreviewDescriptions.value = new Set();
     }
   } catch (error) {
     console.warn('載入即時訊息失敗', error);
@@ -598,6 +619,46 @@ onActivated(() => {
         </div>
       </section> -->
 
+            <!-- ⑤ 即時訊息區 -->
+      <div class="flex mt-2">
+        <p class="flex text-sm font-bold text-grey-500 ml-3">即時訊息</p>
+        <div class="flex-1 justify-end flex">
+          <button class="text-sm font-semibold text-primary-500" @click="openNewsModal">
+            查看更多 >
+          </button>
+        </div>
+      </div>
+      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+        <div v-if="isNewsLoading" class="py-6 text-center text-sm text-grey-500">即時訊息更新中...</div>
+        <template v-else>
+          <div class="space-y-3">
+            <article
+              v-for="item in previewNews"
+              :key="item.id"
+              class="rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+            >
+              <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
+              <p
+                v-for="(line, idx) in getPreviewDescriptionLines(item.id, item.description)"
+                :key="`preview-line-${item.id}-${idx}`"
+                class="text-sm text-grey-600 leading-relaxed"
+              >
+                {{ line }}
+              </p>
+              <button
+                v-if="canShowMorePreviewDescription(item.id, item.description)"
+                type="button"
+                class="mt-1 text-xs font-semibold text-primary-500"
+                @click="expandPreviewDescription(item.id)"
+              >
+                顯示更多
+              </button>
+              <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
+            </article>
+          </div>
+          <p v-if="newsError" class="pt-3 text-center text-xs text-rose-500">{{ newsError }}</p>
+        </template>
+      </section>
       <!-- ④ 路況查看區 -->
       <div class="flex mt-2">
         <p class="flex text-sm font-bold text-grey-500 ml-2 ">{{ mapPreview.title }}</p>
@@ -624,32 +685,7 @@ onActivated(() => {
         </div>
       </section>
 
-      <!-- ⑤ 即時訊息區 -->
-      <div class="flex mt-2">
-        <p class="flex text-sm font-bold text-grey-500 ml-3">即時訊息</p>
-        <div class="flex-1 justify-end flex">
-          <button class="text-sm font-semibold text-primary-500" @click="openNewsModal">
-            查看更多 >
-          </button>
-        </div>
-      </div>
-      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div v-if="isNewsLoading" class="py-6 text-center text-sm text-grey-500">即時訊息更新中...</div>
-        <template v-else>
-          <div class="space-y-3">
-            <article v-for="item in previewNews" :key="item.id"
-              class="rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
-              <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
-              <p v-for="(line, idx) in splitLines(item.description)" :key="`preview-line-${item.id}-${idx}`"
-                class="text-sm text-grey-600 leading-relaxed">
-                {{ line }}
-              </p>
-              <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
-            </article>
-          </div>
-          <p v-if="newsError" class="pt-3 text-center text-xs text-rose-500">{{ newsError }}</p>
-        </template>
-      </section>
+
     </main>
 
     <!-- 風況 FAB -->
