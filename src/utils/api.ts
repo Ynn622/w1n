@@ -229,6 +229,7 @@ export interface WindDetail {
   direction: string;
   riskLevel: number; // 0-5
   riskLabel: string;
+  trend: { hour: number; value: number }[];
 }
 
 export const getWindDetail = (): WindDetail => ({
@@ -241,5 +242,16 @@ export const getWindDetail = (): WindDetail => ({
   avgWind: 10.3,
   direction: '北北東',
   riskLevel: 3,
-  riskLabel: '中度風險'
+  riskLabel: '中度風險',
+  trend: [
+    { hour: 0, value: 8.4 },
+    { hour: 3, value: 8.9 },
+    { hour: 6, value: 9.8 },
+    { hour: 9, value: 10.6 },
+    { hour: 12, value: 11.2 },
+    { hour: 15, value: 11.8 },
+    { hour: 18, value: 10.9 },
+    { hour: 21, value: 10.2 },
+    { hour: 24, value: 9.5 }
+  ]
 });

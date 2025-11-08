@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BottomNav from '@/components/BottomNav.vue';
 import WindIcon from '@/assets/navicons/Wind.png';
@@ -40,6 +40,45 @@ const isWindStale = computed(
 const riskSegments = computed(() =>
   Array.from({ length: 5 }).map((_, index) => index < windDetail.value.riskLevel)
 );
+
+const chartWidth = 320;
+const chartHeight = 140;
+const chartPadding = 12;
+
+const windTrendPoints = computed(() => {
+  const points = windDetail.value.trend;
+  if (!points.length) {
+    return [];
+  }
+  const hours = points.map(p => p.hour);
+  const values = points.map(p => p.value);
+  const maxValue = Math.max(...values);
+  const minValue = Math.min(...values);
+  const range = maxValue - minValue || 1;
+  return points.map((point, index) => {
+    const x =
+      (index / (points.length - 1)) * (chartWidth - chartPadding * 2) + chartPadding;
+    const normalized = (point.value - minValue) / range;
+    const y =
+      chartPadding + (1 - normalized) * (chartHeight - chartPadding * 2);
+    return {
+      x,
+      y,
+      hour: point.hour,
+      value: point.value
+    };
+  });
+});
+
+const trendLinePath = computed(() => {
+  const points = windTrendPoints.value;
+  if (!points.length) {
+    return '';
+  }
+  return points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`)
+    .join(' ');
+});
 
 const refreshWindDetail = () => {
   if (isRefreshingWind.value) {
@@ -95,10 +134,18 @@ const handleFabPointerUp = () => {
 const handleFabPointerLeave = () => {
   clearFabTimer();
 };
+
+watch(isWindModalOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : '';
+});
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = '';
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#F8F8F8] pb-24">
+  <div class="page-shell min-h-screen bg-[#F8F8F8] pb-24" :class="{ 'modal-open': isWindModalOpen }">
     <main class="mx-auto flex max-w-5xl flex-col gap-2 px-4 pt-6">
       <!-- ① 標題區 -->
       <section class="rounded-2xl bg-white px-5 py-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
@@ -147,7 +194,7 @@ const handleFabPointerLeave = () => {
       </section>
 
       <!-- ③ 服務列表區 -->
-      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <!-- <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <h2 class="mb-3 text-lg font-bold text-grey-900">服務列表</h2>
         <div
           class="service-scroll flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-5 sm:gap-2.5 sm:pb-0"
@@ -165,7 +212,7 @@ const handleFabPointerLeave = () => {
             <span v-if="service.disabled" class="text-[10px] text-grey-400">即將推出</span>
           </button>
         </div>
-      </section>
+      </section> -->
 
       <!-- ④ 路況查看區 -->
       <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
@@ -274,53 +321,102 @@ const handleFabPointerLeave = () => {
             <button class="wind-modal__close" @click="closeWindModal">✕</button>
           </header>
 
-          <section class="wind-modal__snapshot">
-            <div class="flex items-center gap-4">
-              <div class="rounded-full bg-primary-50 p-4 text-4xl">🌀</div>
-              <div>
-                <p class="text-xs text-grey-500">{{ windDetail.source }}</p>
-                <p class="text-xs text-grey-500">更新：{{ formattedUpdatedAt }}</p>
-                <p class="mt-2 text-5xl font-bold text-grey-900">
-                  {{ windDetail.windSpeed.toFixed(1) }}
-                  <span class="text-lg font-medium">{{ windDetail.unit }}</span>
-                </p>
-                <p class="text-sm font-semibold text-grey-700">{{ windDetail.location }}</p>
+          <div class="wind-modal__body">
+            <section class="wind-modal__snapshot">
+              <div class="flex items-center gap-4">
+                <div class="rounded-full bg-primary-50 p-4 text-4xl">🌀</div>
+                <div>
+                  <p class="text-xs text-grey-500">{{ windDetail.source }}</p>
+                  <p class="text-xs text-grey-500">更新：{{ formattedUpdatedAt }}</p>
+                  <p class="mt-2 text-5xl font-bold text-grey-900">
+                    {{ windDetail.windSpeed.toFixed(1) }}
+                    <span class="text-lg font-medium">{{ windDetail.unit }}</span>
+                  </p>
+                  <p class="text-sm font-semibold text-grey-700">{{ windDetail.location }}</p>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section class="wind-modal__table">
-            <div class="wind-info-row">
-              <span>最大風速</span>
-              <strong>{{ windDetail.maxWind.toFixed(1) }} {{ windDetail.unit }}</strong>
-            </div>
-            <div class="wind-info-row">
-              <span>平均風速</span>
-              <strong>{{ windDetail.avgWind.toFixed(1) }} {{ windDetail.unit }}</strong>
-            </div>
-            <div class="wind-info-row">
-              <span>風向</span>
-              <strong>{{ windDetail.direction }}</strong>
-            </div>
-            <div class="wind-info-row wind-info-row--risk">
-              <div>
-                <span>風險等級</span>
-                <p class="text-xs text-grey-500">{{ windDetail.riskLabel }}</p>
+            <section class="wind-modal__table">
+              <div class="wind-info-row">
+                <span>最大風速</span>
+                <strong>{{ windDetail.maxWind.toFixed(1) }} {{ windDetail.unit }}</strong>
               </div>
-              <div class="risk-bars">
-                <span
-                  v-for="(filled, index) in riskSegments"
-                  :key="index"
-                  class="risk-bars__item"
-                  :class="{ 'risk-bars__item--active': filled }"
-                ></span>
+              <div class="wind-info-row">
+                <span>平均風速</span>
+                <strong>{{ windDetail.avgWind.toFixed(1) }} {{ windDetail.unit }}</strong>
               </div>
-            </div>
-          </section>
+              <div class="wind-info-row">
+                <span>風向</span>
+                <strong>{{ windDetail.direction }}</strong>
+              </div>
+              <div class="wind-info-row wind-info-row--risk">
+                <div>
+                  <span>風險等級</span>
+                  <p class="text-xs text-grey-500">{{ windDetail.riskLabel }}</p>
+                </div>
+                <div class="risk-bars">
+                  <span
+                    v-for="(filled, index) in riskSegments"
+                    :key="index"
+                    class="risk-bars__item"
+                    :class="{ 'risk-bars__item--active': filled }"
+                  ></span>
+                </div>
+              </div>
+            </section>
 
-          <section class="wind-modal__actions">
-            <button class="trend-button">風級趨勢圖 →</button>
-          </section>
+            <section class="wind-modal__chart">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-base font-semibold text-grey-900">風級趨勢圖（0-24 時）</h3>
+                <p class="text-xs text-grey-500">單位：{{ windDetail.unit }}</p>
+              </div>
+              <div class="trend-chart">
+                <svg
+                  :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <line
+                    v-for="tick in 4"
+                    :key="tick"
+                    :x1="chartPadding"
+                    :x2="chartWidth - chartPadding"
+                    :y1="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4"
+                    :y2="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4"
+                    stroke="#E5E7EB"
+                    stroke-width="1"
+                    stroke-dasharray="4 6"
+                  />
+                  <path
+                    :d="trendLinePath"
+                    fill="none"
+                    stroke="#31949A"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <circle
+                    v-for="(point, index) in windTrendPoints"
+                    :key="`dot-${index}`"
+                    :cx="point.x"
+                    :cy="point.y"
+                    r="4"
+                    fill="#fff"
+                    stroke="#31949A"
+                    stroke-width="2"
+                  />
+                </svg>
+                <div class="trend-chart__labels">
+                  <span
+                    v-for="(point, index) in windTrendPoints"
+                    :key="`label-${index}`"
+                  >
+                    {{ point.hour }}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
         </section>
       </div>
     </Transition>
@@ -373,7 +469,7 @@ const handleFabPointerLeave = () => {
 .wind-fab {
   position: fixed;
   right: 1.5rem;
-  bottom: 6.5rem;
+  bottom: 7rem;
   width: 64px;
   height: 64px;
   border-radius: 999px;
@@ -400,6 +496,10 @@ const handleFabPointerLeave = () => {
   animation: pulse 1.2s infinite;
 }
 
+.page-shell.modal-open {
+  overflow: hidden;
+}
+
 .wind-modal__overlay {
   position: fixed;
   inset: 0;
@@ -407,17 +507,28 @@ const handleFabPointerLeave = () => {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: clamp(2rem, 8vh, 4rem) 1rem 1rem;
+  padding: clamp(1rem, 6vh, 2.5rem) 0.85rem 1.25rem;
   z-index: 50;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.wind-modal__overlay::-webkit-scrollbar {
+  display: none;
 }
 
 .wind-modal__panel {
   width: 100%;
   max-width: 520px;
+  max-height: calc(100vh - clamp(1rem, 5vh, 2rem));
   background: #fff;
   border-radius: 24px;
   padding: 1.5rem;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
 }
 
 .wind-modal__header {
@@ -425,6 +536,11 @@ const handleFabPointerLeave = () => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1rem;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  padding-bottom: 0.5rem;
+  z-index: 5;
 }
 
 .wind-modal__close {
@@ -439,6 +555,19 @@ const handleFabPointerLeave = () => {
 
 .wind-modal__close:hover {
   color: #444;
+}
+
+.wind-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-right: 0.25rem;
+  padding-bottom: 2.5rem;
+}
+
+.wind-modal__body::-webkit-scrollbar {
+  display: none;
 }
 
 .wind-modal__snapshot {
@@ -480,26 +609,23 @@ const handleFabPointerLeave = () => {
   background: #62a3a6;
 }
 
-.wind-modal__actions {
+.wind-modal__chart {
   margin-top: 1.5rem;
-  display: flex;
-  justify-content: center;
 }
 
-.trend-button {
-  width: 100%;
-  border: none;
-  border-radius: 14px;
-  background: #e0f0f1;
-  color: #0f4c5c;
-  padding: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease;
+.trend-chart {
+  background: #f8fafa;
+  border-radius: 16px;
+  padding: 1rem;
 }
 
-.trend-button:hover {
-  background: #d2ebed;
+.trend-chart__labels {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  font-size: 0.7rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+  text-align: center;
 }
 
 .wind-modal-enter-active,
