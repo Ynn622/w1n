@@ -15,7 +15,9 @@ const filters = getTrafficTabs();
 const layerPresets = getTrafficLayerPresets();
 const mapEmbedUrl = getTrafficMapEmbedUrl();
 
-const selectedFilters = ref<TrafficTab['id'][]>([]);
+const selectedFilters = ref<TrafficTab['id'][]>(
+  filters.length ? [filters[0].id] : []
+);
 
 const detailLayerId = ref<TrafficTab['id'] | null>(null);
 
@@ -121,8 +123,11 @@ const goHome = () => {
           ></iframe>
 
           <!-- 浮動資訊卡 -->
-          <div class="absolute inset-x-4 top-4 rounded-2xl bg-white/95 p-4 shadow-lg">
-            <div v-if="detailLayer">
+          <Transition name="fade">
+            <div
+              v-if="detailLayer"
+              class="absolute inset-x-4 top-4 rounded-2xl bg-white/95 p-4 shadow-lg"
+            >
               <div class="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-grey-500">
                 <span>路段詳情</span>
                 <button class="text-xs font-semibold text-primary-500" @click="detailLayerId = null">
@@ -138,18 +143,9 @@ const goHome = () => {
               <p class="mt-2 text-xs font-medium text-grey-500">
                 {{ detailLayer.highlight }}
               </p>
+              <p class="mt-3 text-[11px] text-grey-400">雙指縮放地圖，點擊標記了解更多。</p>
             </div>
-            <div v-else>
-              <h2 class="text-base font-bold text-grey-800">點擊地圖上的標記</h2>
-              <p v-if="hasSelection" class="mt-1 text-sm text-grey-600">
-                已顯示 {{ selectedFilters.length }} 種路段，請點擊對應的標記以查看詳情。
-              </p>
-              <p v-else class="mt-1 text-sm text-grey-600">
-                先從上方篩選要顯示的路段類型，再點擊地圖上的標記查看詳情。
-              </p>
-            </div>
-            <p class="mt-3 text-[11px] text-grey-400">雙指縮放地圖，點擊標記查看詳細資訊。</p>
-          </div>
+          </Transition>
 
           <!-- 選中路段徽章 -->
           <div
@@ -178,5 +174,16 @@ const goHome = () => {
 <style scoped>
 .map-shell iframe {
   filter: saturate(1.05);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-0.5rem);
 }
 </style>

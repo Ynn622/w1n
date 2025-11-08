@@ -4,6 +4,7 @@ import HomeIcon from '@/assets/navicons/Setting.png';
 import TrafficIcon from '@/assets/navicons/Traffic.png';
 import SafeIcon from '@/assets/navicons/SafeNavigation.png';
 import WindIcon from '@/assets/navicons/Wind.png';
+import ReportIcon from '@/assets/navicons/Report.png';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,6 +13,7 @@ const navItems = [
   { name: 'home', label: '首頁', icon: HomeIcon },
   { name: 'traffic', label: '即時路況', icon: TrafficIcon },
   { name: 'safeNavigation', label: '安全導航', icon: SafeIcon },
+  { name: 'report', label: '障礙回報', icon: ReportIcon },
   { name: 'wind', label: '風況資訊', icon: WindIcon }
 ];
 
@@ -33,7 +35,7 @@ const navigateTo = (name: string) => {
           'text-grey-500 hover:text-primary-400 hover:bg-grey-50': route.name !== item.name
         }"
       >
-        <span class="mb-1 h-10 w-10">
+        <span class="mb-1 h-10 w-10e">
           <img :src="item.icon" :alt="item.label" class="h-10 w-10 object-contain" />
         </span>
         <span class="text-xs font-medium">{{ item.label }}</span>

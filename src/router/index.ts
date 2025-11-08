@@ -19,11 +19,11 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/wind',
-    name: 'wind',
-    component: () => import('@/views/Wind.vue'),
+    path: '/report',
+    name: 'report',
+    component: () => import('@/views/Report.vue'),
     meta: {
-      title: '風況資訊'
+      title: '障礙回報'
     }
   },
   {

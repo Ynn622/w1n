@@ -2,7 +2,8 @@ export interface ServiceItem {
   id: string;
   name: string;
   icon: string;
-  route: string;
+  route?: string;
+  disabled?: boolean;
 }
 
 export interface MapPreview {
@@ -66,9 +67,9 @@ export const getHomeOverview = (): HomeOverview => ({
   services: [
     { id: 'traffic', name: '路況檢視', icon: '🚗', route: 'traffic' },
     { id: 'safe-nav', name: '安全導航', icon: '🧭', route: 'safeNavigation' },
-    { id: 'report', name: '障礙回報', icon: '⚠️', route: 'traffic' },
-    { id: 'wind', name: '風況詳情', icon: '🌪️', route: 'wind' },
-    { id: 'settings', name: '個人設定', icon: '⚙️', route: 'settings' }
+    { id: 'report', name: '障礙回報', icon: '⚠️', route: 'wind' },
+    { id: 'wind', name: '風況詳情', icon: '🌪️', disabled: true },
+    { id: 'settings', name: '個人設定', icon: '⚙️', disabled: true }
   ],
   mapPreview: {
     title: '路況查看',
@@ -97,47 +98,6 @@ export const getHomeOverview = (): HomeOverview => ({
     }
   ]
 });
-
-export const getWindMetrics = (): WindInfo => ({
-  speed: '15',
-  direction: '東北風',
-  unit: 'm/s',
-  intensity: 65,
-  temperature: '25',
-  humidity: '65',
-  pressure: '1013'
-});
-
-export const getWindNews = (): NewsItem[] => [
-  {
-    id: 1,
-    title: '東北季風增強 北部轉涼有雨',
-    summary: '受東北季風影響，北部地區氣溫下降3-5度，並有局部陣雨...',
-    time: '2小時前',
-    source: '中央氣象署'
-  },
-  {
-    id: 2,
-    title: '強風特報 沿海地區需注意',
-    summary: '今日午後東北風持續增強，沿海空曠地區陣風可達8-9級...',
-    time: '5小時前',
-    source: '氣象局'
-  },
-  {
-    id: 3,
-    title: '週末天氣轉好 適合戶外活動',
-    summary: '預計週末東北季風減弱，各地多雲到晴，溫度回升...',
-    time: '1天前',
-    source: '天氣風險公司'
-  },
-  {
-    id: 4,
-    title: '空氣品質預報 中南部需注意',
-    summary: '受風向影響，中南部地區空氣品質可能達到橘色提醒等級...',
-    time: '1天前',
-    source: '環保署'
-  }
-];
 
 export interface TrafficTab {
   id: 'avoid' | 'danger' | 'safe';
@@ -231,4 +191,29 @@ export const getSafeNavigationData = (): SafeNavigationData => ({
   ],
   mapEmbedUrl:
     'https://www.google.com/maps/embed?pb=!1m28!1m12!1m3!1d115730.42421285012!2d121.46760245590318!3d25.082775829333334!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!4m13!3e0!4m5!1s0x3442abbf4a4e1fbf%3A0xc8a2434d0491d738!2z5Y-w5YyX5biC5p2x5Y2A!3m2!1d25.0375198!2d121.5636796!4m5!1s0x3442ae91fa777e5b%3A0xfb393137f6741c0f!2z5ZyL56uL5bqt5rOV5Zyf5Z-O!3m2!1d25.1023988!2d121.5493648!5e0!3m2!1szh-TW!2stw!4v1717140000000!5m2!1szh-TW!2stw'
+});
+
+export interface ObstacleTypeOption {
+  id: 'tree' | 'sign' | 'accident' | 'others';
+  label: string;
+  icon: string;
+  color: string;
+}
+
+export interface ObstacleReportData {
+  mapEmbedUrl: string;
+  obstacleTypes: ObstacleTypeOption[];
+  helperText: string;
+}
+
+export const getObstacleReportData = (): ObstacleReportData => ({
+  mapEmbedUrl:
+    'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3614.7267283102656!2d121.56151497607821!3d25.04027698397505!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3442abb1d22d4daf%3A0xe8a20c95d5fd8755!2z5Y-w5YyX5biC5Y-w5YyXIE1STiDliIbkuKrmloflpKc!5e0!3m2!1szh-TW!2stw!4v1717240800000!5m2!1szh-TW!2stw',
+  helperText: '街口資料即將串接交通局 API，將顯示障礙狀態、回報人與時間。',
+  obstacleTypes: [
+    { id: 'tree', label: '路樹傾倒', icon: '🌳', color: '#4AA37D' },
+    { id: 'sign', label: '招牌掉落', icon: '🪧', color: '#F3A530' },
+    { id: 'accident', label: '交通事故', icon: '🚨', color: '#D45251' },
+    { id: 'others', label: '其他情況', icon: '⚠️', color: '#5B8DEF' }
+  ]
 });
