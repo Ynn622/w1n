@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router';
+import HomeIcon from '@/assets/navicons/Setting.png';
+import TrafficIcon from '@/assets/navicons/Traffic.png';
+import SafeIcon from '@/assets/navicons/SafeNavigation.png';
+import WindIcon from '@/assets/navicons/Wind.png';
 
 const router = useRouter();
 const route = useRoute();
 
 const navItems = [
-  { name: 'home', label: '首頁', icon: '🏠' },
-  { name: 'traffic', label: '即時路況', icon: '🚗' },
-  { name: 'safeNavigation', label: '安全導航', icon: '🧭' },
-  { name: 'wind', label: '風況資訊', icon: '🌪️' }
+  { name: 'home', label: '首頁', icon: HomeIcon },
+  { name: 'traffic', label: '即時路況', icon: TrafficIcon },
+  { name: 'safeNavigation', label: '安全導航', icon: SafeIcon },
+  { name: 'wind', label: '風況資訊', icon: WindIcon }
 ];
 
 const navigateTo = (name: string) => {
@@ -29,7 +33,9 @@ const navigateTo = (name: string) => {
           'text-grey-500 hover:text-primary-400 hover:bg-grey-50': route.name !== item.name
         }"
       >
-        <span class="text-2xl mb-1">{{ item.icon }}</span>
+        <span class="mb-1 h-10 w-10">
+          <img :src="item.icon" :alt="item.label" class="h-10 w-10 object-contain" />
+        </span>
         <span class="text-xs font-medium">{{ item.label }}</span>
       </button>
     </div>
