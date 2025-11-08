@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import BottomNav from '@/components/BottomNav.vue';
 import WindIcon from '@/assets/navicons/Wind.png';
@@ -453,20 +453,8 @@ const handleFabPointerLeave = () => {
   clearFabTimer();
 };
 
-watch(
-  () => isWindModalOpen.value || isNewsModalOpen.value,
-  (open) => {
-    document.body.style.overflow = open ? 'hidden' : '';
-  }
-);
-
-onBeforeUnmount(() => {
-  document.body.style.overflow = '';
-});
-
 onMounted(() => {
   loadPoliceNews();
-  requestUserLocation();
   loadWindStations();
   loadFutureForecastForTown();
 });
@@ -500,6 +488,9 @@ onMounted(() => {
             {{ isLocating ? '定位中...' : '更新定位' }}
           </button>
         </div>
+        <p class="mt-2 text-xs text-grey-400">
+          若 Android 裝置未跳出定位授權提示，請點擊「更新定位」並確認 App 已獲得 GPS 權限。
+        </p>
       </section>
 
       <!-- ② 即時資訊卡片區 -->
@@ -638,28 +629,17 @@ onMounted(() => {
             <article
               v-for="item in previewNews"
               :key="item.id"
-              class="flex gap-3 rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+              class="rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
             >
-              <div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-grey-100">
-                <img
-                  v-if="item.thumbnail"
-                  :src="item.thumbnail"
-                  alt="news thumbnail"
-                  class="h-full w-full object-cover"
-                />
-                <div v-else class="h-full w-full bg-gradient-to-br from-primary-100 to-secondary-100"></div>
-              </div>
-              <div class="flex flex-col">
-                <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
-                <p
-                  v-for="(line, idx) in splitLines(item.description)"
-                  :key="`preview-line-${item.id}-${idx}`"
-                  class="text-sm text-grey-600 leading-relaxed"
-                >
-                  {{ line }}
-                </p>
-                <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
-              </div>
+              <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
+              <p
+                v-for="(line, idx) in splitLines(item.description)"
+                :key="`preview-line-${item.id}-${idx}`"
+                class="text-sm text-grey-600 leading-relaxed"
+              >
+                {{ line }}
+              </p>
+              <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
             </article>
           </div>
           <p v-if="newsError" class="pt-3 text-center text-xs text-rose-500">{{ newsError }}</p>
@@ -692,10 +672,6 @@ onMounted(() => {
               :key="`news-modal-${item.id}`"
               class="news-modal__item"
             >
-              <div class="news-modal__thumb">
-                <img v-if="item.thumbnail" :src="item.thumbnail" :alt="`${item.title} thumbnail`" />
-                <div v-else class="news-modal__thumb--fallback"></div>
-              </div>
               <div class="news-modal__content">
                 <h3 class="news-modal__title">
                   {{ item.title }}
@@ -1205,33 +1181,10 @@ onMounted(() => {
 }
 
 .news-modal__item {
-  display: flex;
-  gap: 0.75rem;
   padding: 0.75rem;
   border-radius: 16px;
   background: #f9fbfb;
   border: 1px solid #e1f0f1;
-}
-
-.news-modal__thumb {
-  width: 64px;
-  height: 64px;
-  border-radius: 14px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: #eef6f7;
-}
-
-.news-modal__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.news-modal__thumb--fallback {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #d1f1f2, #f4fbfb);
 }
 
 .news-modal__content {
