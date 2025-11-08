@@ -8,7 +8,13 @@ import {
   getHomeOverview,
   getMapEmbedUrlFromCoords,
   getWindDetail,
-  reverseGeocode
+  reverseGeocode,
+  fetchWindStations,
+  pickNearestStation,
+  buildWindReadingFromStation,
+  type WindStation,
+  type WindInfo,
+  type WindDetail
 } from '@/utils/api';
 
 const router = useRouter();
@@ -18,13 +24,44 @@ const homeOverview = getHomeOverview();
 const {
   location,
   advisory,
-  windInfo,
-  drivingAdvice,
   services,
   mapPreview,
   googleMapEmbed,
   streetInfo,
 } = homeOverview;
+
+const ensureWindDirectionWord = (value?: string | null) => {
+  if (!value) {
+    return '風向更新中';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '風向更新中';
+  }
+  return trimmed.includes('風') ? trimmed : `${trimmed}風`;
+};
+
+const fallbackWindInfo: WindInfo = {
+  speed: '更新中',
+  unit: 'm/s',
+  direction: '風向更新中',
+  intensity: 0,
+  temperature: '--',
+  humidity: '--',
+  pressure: '--'
+};
+
+const windInfo = ref<WindInfo | null>(null);
+
+const windInfoDisplay = computed<WindInfo>(() => {
+  if (!windInfo.value) {
+    return fallbackWindInfo;
+  }
+  return {
+    ...windInfo.value,
+    direction: ensureWindDirectionWord(windInfo.value.direction)
+  };
+});
 
 const newsList = ref(homeOverview.newsList);
 const previewNews = computed(() => newsList.value.slice(0, 2));
@@ -40,32 +77,109 @@ const navigateTo = (routeName: string) => {
   router.push({ name: routeName });
 };
 
-const windDetail = ref(getWindDetail());
+const baseWindDetail = getWindDetail();
+const windDetail = ref<WindDetail>({ ...baseWindDetail });
+const placeholderWindDetail: WindDetail = {
+  ...baseWindDetail,
+  location: '資料更新中',
+  windSpeed: 0,
+  updatedAt: '',
+  source: '資料來源：更新中',
+  avgWind: 0,
+  direction: '風向更新中',
+  riskLevel: 0,
+  riskLabel: '風險評估中'
+};
 const isWindModalOpen = ref(false);
 const isNewsModalOpen = ref(false);
 const isRefreshingWind = ref(false);
 const lastUpdated = ref(new Date(windDetail.value.updatedAt));
 const isNewsLoading = ref(false);
 const newsError = ref<string | null>(null);
+const windStations = ref<WindStation[]>([]);
+const isWindStationLoading = ref(false);
+const windStationError = ref<string | null>(null);
+const nearestStation = ref<WindStation | null>(null);
+const isWindDataReady = computed(() => Boolean(windInfo.value));
+
+const windDetailDisplay = computed<WindDetail>(() => {
+  if (!isWindDataReady.value) {
+    return placeholderWindDetail;
+  }
+  return {
+    ...windDetail.value,
+    direction: ensureWindDirectionWord(windDetail.value.direction)
+  };
+});
 
 const formatTime = (date: Date) =>
   `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 
-const formattedUpdatedAt = computed(() => formatTime(lastUpdated.value));
+const formattedUpdatedAt = computed(() =>
+  isWindDataReady.value ? formatTime(lastUpdated.value) : '更新中'
+);
 
 const isWindStale = computed(
   () => Date.now() - lastUpdated.value.getTime() > 10 * 60 * 1000
 );
 
 const riskSegments = computed(() =>
-  Array.from({ length: 5 }).map((_, index) => index < windDetail.value.riskLevel)
+  Array.from({ length: 5 }).map((_, index) => index < windDetailDisplay.value.riskLevel)
 );
 
 const windIntensitySegments = computed(() => {
   const segments = 5;
-  const value = Number(windInfo.intensity) || 0;
+  const value = Number(windInfoDisplay.value.intensity) || 0;
   const step = 100 / segments;
   return Array.from({ length: segments }, (_, index) => value >= (index + 1) * step);
+});
+
+const drivingAdviceBlock = computed(() => {
+  const parsedSpeed = Number(windInfo.value?.speed);
+  if (Number.isNaN(parsedSpeed)) {
+    return {
+      title: '行車建議載入中',
+      body: '風速資料尚未更新，請稍後重新整理。'
+    };
+  }
+
+  const direction = windInfo.value?.direction
+    ? ensureWindDirectionWord(windInfo.value.direction)
+    : '當前風向';
+  const stationLabel = nearestStation.value ? `${nearestStation.value.station_name}測站` : '最新測站';
+
+  if (parsedSpeed < 4) {
+    return {
+      title: '風勢平穩，可正常行駛',
+      body: `${stationLabel} 風速約 ${parsedSpeed.toFixed(1)} m/s，${direction} 輕微，保持一般速限並留意路面濕滑即可。`
+    };
+  }
+
+  if (parsedSpeed < 8) {
+    return {
+      title: '輕度側風，放慢車速',
+      body: `${stationLabel} 風速約 ${parsedSpeed.toFixed(1)} m/s，${direction} 偶有陣風，建議降低 10 km/h 並拉大跟車距離。`
+    };
+  }
+
+  if (parsedSpeed < 12) {
+    return {
+      title: '陣風明顯，避免高速',
+      body: `${stationLabel} 風速達 ${parsedSpeed.toFixed(1)} m/s，${direction} 持續，請減少上高架或空曠路段並注意機車穩定。`
+    };
+  }
+
+  if (parsedSpeed < 16) {
+    return {
+      title: '強側風警示，建議改道',
+      body: `${stationLabel} 風速約 ${parsedSpeed.toFixed(1)} m/s，${direction} 風牆明顯，請改走避風路線並提醒乘客系好安全帶。`
+    };
+  }
+
+  return {
+    title: '劇烈風勢，暫緩出行',
+    body: `${stationLabel} 偵測到 ${parsedSpeed.toFixed(1)} m/s 強風，${direction} 風向劇烈變化，如非必要請暫停出門並密切注意交通封閉資訊。`
+  };
 });
 
 const chartWidth = 320;
@@ -107,23 +221,20 @@ const trendLinePath = computed(() => {
     .join(' ');
 });
 
-const refreshWindDetail = () => {
+const refreshWindDetail = async () => {
   if (isRefreshingWind.value) {
-    return Promise.resolve();
+    return;
   }
   isRefreshingWind.value = true;
-  return new Promise<void>((resolve) => {
-    setTimeout(() => {
-      windDetail.value = getWindDetail();
-      lastUpdated.value = new Date(windDetail.value.updatedAt);
-      isRefreshingWind.value = false;
-      resolve();
-    }, 700);
-  });
+  try {
+    await loadWindStations();
+  } finally {
+    isRefreshingWind.value = false;
+    lastUpdated.value = new Date();
+  }
 };
 
-const openWindModal = async () => {
-  await refreshWindDetail();
+const openWindModal = () => {
   isWindModalOpen.value = true;
 };
 
@@ -193,6 +304,7 @@ const updateLocationByCoords = async (lat: number, lng: number) => {
   if (address && !isCoordinateLabel(address)) {
     locationLabel.value = address;
   }
+  applyNearestStation();
 };
 
 const requestUserLocation = () => {
@@ -253,6 +365,43 @@ const loadPoliceNews = async () => {
 let fabHoldTimer: number | null = null;
 const fabLongPressTriggered = ref(false);
 
+const loadWindStations = async () => {
+  try {
+    isWindStationLoading.value = true;
+    windStationError.value = null;
+    const stations = await fetchWindStations();
+    windStations.value = stations;
+    applyNearestStation();
+  } catch (error) {
+    console.warn('載入風況測站失敗', error);
+    windStationError.value = '無法取得風況測站資料';
+  } finally {
+    isWindStationLoading.value = false;
+  }
+};
+
+const applyNearestStation = () => {
+  if (!userCoords.value || !windStations.value.length) {
+    return;
+  }
+  const nearest = pickNearestStation(
+    userCoords.value.lat,
+    userCoords.value.lng,
+    windStations.value
+  );
+  if (!nearest) {
+    return;
+  }
+  nearestStation.value = nearest.station;
+  const reading = buildWindReadingFromStation(nearest.station);
+  windInfo.value = reading.windInfo;
+  windDetail.value = {
+    ...windDetail.value,
+    ...reading.detail
+  };
+  lastUpdated.value = new Date(reading.detail.updatedAt ?? new Date().toISOString());
+};
+
 const handleFabPointerDown = () => {
   fabLongPressTriggered.value = false;
   fabHoldTimer = window.setTimeout(() => {
@@ -295,6 +444,7 @@ onBeforeUnmount(() => {
 onMounted(() => {
   loadPoliceNews();
   requestUserLocation();
+  loadWindStations();
 });
 </script>
 
@@ -338,26 +488,38 @@ onMounted(() => {
           <div class="mb-3 flex items-center justify-between">
             <div>
               <div class="flex items-end gap-2">
-                <span class="text-2xl font-bold text-grey-900">{{ windInfo.speed }}</span>
-                <span class="text-lg text-grey-500">{{ windInfo.unit }}</span>
+                <span class="text-2xl font-bold text-grey-900">{{ windInfoDisplay.speed }}</span>
+                <span class="text-lg text-grey-500">{{ windInfoDisplay.unit }}</span>
               </div>
             </div>
             <div class="text-2xl">🧭</div>
           </div>
-
           <div class="mb-2 flex items-center justify-between text-sm text-grey-600">
-            <span>{{ windInfo.direction }}</span>
-            <span>{{ windInfo.intensity }}%</span>
+            <span>{{ windInfoDisplay.direction }}</span>
+            <span>
+              {{ isWindDataReady ? `${windInfoDisplay.intensity}%` : '更新中' }}
+            </span>
           </div>
           <div class="segment-track mt-1.5">
             <span v-for="(active, idx) in windIntensitySegments" :key="`wind-intensity-${idx}`"
               class="segment-track__item" :class="{ 'segment-track__item--active': active }"></span>
           </div>
+          <p v-if="nearestStation" class="mt-2 text-[11px] text-grey-500">
+            來源測站：{{ nearestStation.station_name }}
+          </p>
+          <p v-else-if="isWindStationLoading" class="mt-2 text-[11px] text-grey-400">
+            載入測站資料中...
+          </p>
+          <p v-else-if="windStationError" class="mt-2 text-[11px] text-rose-500">
+            {{ windStationError }}
+          </p>
         </div>
         <div class="info-card rounded-2xl bg-white p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-          <h2 class="mb-3 text-xl font-bold text-grey-900">盡可能減少外出</h2>
+          <h2 class="mb-3 text-xl font-bold text-grey-900">
+            {{ drivingAdviceBlock.title }}
+          </h2>
           <p class="text-sm text-grey-600 leading-relaxed">
-            {{ drivingAdvice }}
+            {{ drivingAdviceBlock.body }}
           </p>
         </div>
       </section>
@@ -391,7 +553,11 @@ onMounted(() => {
           <div>
             <p class="text-sm text-grey-500">{{ mapPreview.updatedAt }}</p>
           </div>
-          <button class="text-sm font-semibold text-primary-500">
+          <button
+            type="button"
+            class="text-sm font-semibold text-primary-500"
+            @click="navigateTo('traffic')"
+          >
             {{ mapPreview.addressHint }}
           </button>
         </div>
@@ -554,13 +720,16 @@ onMounted(() => {
               <div class="flex items-center gap-4">
                 <div class="rounded-full bg-primary-50 p-4 text-4xl">🌀</div>
                 <div>
-                  <p class="text-xs text-grey-500">{{ windDetail.source }}</p>
+                  <p class="text-xs text-grey-500">{{ windDetailDisplay.source }}</p>
                   <p class="text-xs text-grey-500">更新：{{ formattedUpdatedAt }}</p>
                   <p class="mt-2 text-5xl font-bold text-grey-900">
-                    {{ windDetail.windSpeed.toFixed(1) }}
-                    <span class="text-lg font-medium">{{ windDetail.unit }}</span>
+                    <template v-if="isWindDataReady">
+                      {{ windDetailDisplay.windSpeed.toFixed(1) }}
+                    </template>
+                    <template v-else>—</template>
+                    <span class="text-lg font-medium">{{ windDetailDisplay.unit }}</span>
                   </p>
-                  <p class="text-sm font-semibold text-grey-700">{{ windDetail.location }}</p>
+                  <p class="text-sm font-semibold text-grey-700">{{ windDetailDisplay.location }}</p>
                 </div>
               </div>
             </section>
@@ -568,20 +737,25 @@ onMounted(() => {
             <section class="wind-modal__table">
               <div class="wind-info-row">
                 <span>最大風速</span>
-                <strong>{{ windDetail.maxWind.toFixed(1) }} {{ windDetail.unit }}</strong>
+                <strong>{{ windDetailDisplay.maxWind.toFixed(1) }} {{ windDetailDisplay.unit }}</strong>
               </div>
               <div class="wind-info-row">
                 <span>平均風速</span>
-                <strong>{{ windDetail.avgWind.toFixed(1) }} {{ windDetail.unit }}</strong>
+                <strong>
+                  <template v-if="isWindDataReady">
+                    {{ windDetailDisplay.avgWind.toFixed(1) }} {{ windDetailDisplay.unit }}
+                  </template>
+                  <template v-else>—</template>
+                </strong>
               </div>
               <div class="wind-info-row">
                 <span>風向</span>
-                <strong>{{ windDetail.direction }}</strong>
+                <strong>{{ windDetailDisplay.direction }}</strong>
               </div>
               <div class="wind-info-row wind-info-row--risk">
                 <div>
                   <span>風險等級</span>
-                  <p class="text-xs text-grey-500">{{ windDetail.riskLabel }}</p>
+                  <p class="text-xs text-grey-500">{{ windDetailDisplay.riskLabel }}</p>
                 </div>
                 <div class="risk-bars">
                   <span v-for="(filled, index) in riskSegments" :key="index" class="risk-bars__item"
@@ -593,7 +767,7 @@ onMounted(() => {
             <section class="wind-modal__chart">
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-base font-semibold text-grey-900">風級趨勢圖（0-24 時）</h3>
-                <p class="text-xs text-grey-500">單位：{{ windDetail.unit }}</p>
+                <p class="text-xs text-grey-500">單位：{{ windDetailDisplay.unit }}</p>
               </div>
               <div class="trend-chart">
                 <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" xmlns="http://www.w3.org/2000/svg">

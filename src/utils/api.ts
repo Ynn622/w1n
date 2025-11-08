@@ -50,6 +50,7 @@ export interface NewsItem {
 }
 
 const POLICE_NEWS_ENDPOINT = 'https://ynn22-standing-backend.hf.space/news/police_local';
+const WIND_STATION_ENDPOINT = 'https://ynn22-standing-backend.hf.space/wind/';
 const GOOGLE_GEOCODE_ENDPOINT = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 type PoliceNewsRecord = {
@@ -319,6 +320,119 @@ export const getWindDetail = (): WindDetail => ({
     { hour: 24, value: 9.5 }
   ]
 });
+
+export interface WindStation {
+  station_name: string;
+  station_id: string;
+  county: string;
+  town: string;
+  latitude: number;
+  longitude: number;
+  weather?: string;
+  wind_speed: number;
+  wind_direction_degree?: number;
+  wind_direction?: string;
+  air_temperature?: number;
+  relative_humidity?: number | null;
+}
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const normalizeWindDirection = (value?: string | null) => {
+  if (!value) {
+    return '風向更新中';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '風向更新中';
+  }
+  return trimmed.includes('風') ? trimmed : `${trimmed}風`;
+};
+
+const mapSpeedToRisk = (speed: number) => {
+  if (speed < 4) {
+    return { level: 1, label: '低風險' };
+  }
+  if (speed < 8) {
+    return { level: 2, label: '低中風險' };
+  }
+  if (speed < 12) {
+    return { level: 3, label: '中度風險' };
+  }
+  if (speed < 16) {
+    return { level: 4, label: '中高風險' };
+  }
+  return { level: 5, label: '高風險' };
+};
+
+export const fetchWindStations = async (): Promise<WindStation[]> => {
+  const response = await fetch(WIND_STATION_ENDPOINT);
+  if (!response.ok) {
+    throw new Error('無法取得風況資料');
+  }
+  return response.json();
+};
+
+export const pickNearestStation = (
+  userLat: number,
+  userLng: number,
+  stations: WindStation[]
+): { station: WindStation; distance: number } | null => {
+  if (!stations.length) {
+    return null;
+  }
+  let best: { station: WindStation; distance: number } | null = null;
+  stations.forEach((station) => {
+    const dLat = toRadians(station.latitude - userLat);
+    const dLng = toRadians(station.longitude - userLng);
+    const originLat = toRadians(userLat);
+    const targetLat = toRadians(station.latitude);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(originLat) * Math.cos(targetLat) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = 6371000 * c;
+
+    if (!best || distance < best.distance) {
+      best = { station, distance };
+    }
+  });
+  return best;
+};
+
+export const buildWindReadingFromStation = (station: WindStation) => {
+  const windSpeed = Number(station.wind_speed ?? 0);
+  const temperature = station.air_temperature ?? null;
+  const humidity = station.relative_humidity ?? null;
+  const { level, label } = mapSpeedToRisk(windSpeed);
+  const intensity = Math.min(100, Math.max(0, Math.round((windSpeed / 20) * 100)));
+
+  const directionLabel = normalizeWindDirection(station.wind_direction);
+
+  const windInfo: WindInfo = {
+    speed: windSpeed.toFixed(1),
+    unit: 'm/s',
+    direction: directionLabel,
+    intensity,
+    temperature: temperature !== null ? temperature.toFixed(1) : '--',
+    humidity: humidity !== null ? `${humidity}%` : '--',
+    pressure: '—'
+  };
+
+  const detail: Partial<WindDetail> = {
+    location: `${station.station_name}（${station.county}${station.town ? `·${station.town}` : ''}）`,
+    source: `資料來源：${station.station_name}測站`,
+    windSpeed,
+    direction: directionLabel,
+    avgWind: windSpeed,
+    riskLevel: level,
+    riskLabel: label,
+    updatedAt: new Date().toISOString()
+  };
+
+  return { windInfo, detail };
+};
 
 export const getMapEmbedUrlFromCoords = (lat: number, lng: number): string => {
   if (VITE_GOOGLE_MAPS_API_KEY) {
