@@ -1,0 +1,422 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import Button from '@/components/base/Button.vue';
+import Input from '@/components/base/Input.vue';
+import Select from '@/components/base/Select.vue';
+import type { Option } from '@/components/base/Select.vue';
+import Radio from '@/components/base/Radio.vue';
+import Checkbox from '@/components/base/Checkbox.vue';
+import Textarea from '@/components/base/Textarea.vue';
+import Dialog from '@/components/base/Dialog.vue';
+import Cardlabel from '@/components/base/Cardlabel.vue';
+import { CardLabelType } from '@/components/base/Cardlabel.vue';
+import MultipleSelect from '@/components/base/MultipleSelect.vue';
+
+// Form values
+const inputValue = ref('');
+const selectValue = ref('');
+const radioValue = ref('');
+const checkboxValue = ref<string[]>([]);
+const textareaValue = ref('');
+const multipleSelectValue = ref<string[]>([]);
+
+// Options
+const selectOptions: Option[] = [
+  { label: '選項 1', value: 'option1' },
+  { label: '選項 2', value: 'option2' },
+  { label: '選項 3', value: 'option3' }
+];
+
+const checkboxOption: Option = {
+  label: '我同意條款',
+  value: 'agree'
+};
+
+// Dialog
+const isDialogOpen = ref(false);
+const isAlertDialogOpen = ref(false);
+
+// Validation
+const triggerValidate = ref(false);
+
+// Handlers
+const handleButtonClick = () => {
+  console.log('按鈕被點擊了！');
+  alert('按鈕被點擊了！');
+};
+
+const handleValidateForm = () => {
+  triggerValidate.value = !triggerValidate.value;
+  console.log('表單驗證觸發');
+};
+
+const handleDialogPositive = () => {
+  console.log('確定按鈕被點擊');
+};
+
+const handleDialogNegative = () => {
+  console.log('取消按鈕被點擊');
+};
+
+const handleMultipleSelectConfirm = (checkedList: string[] | number[]) => {
+  console.log('多選確認:', checkedList);
+};
+</script>
+
+<template>
+  <div class="test-page">
+    <div class="container mx-auto p-8">
+      <h1 class="text-4xl font-bold mb-8 text-center text-primary-500">組件測試頁面</h1>
+
+      <!-- BaseButton Section -->
+      <section class="component-section">
+        <h2 class="section-title">BaseButton 按鈕組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">普通按鈕</p>
+            <Button @click="handleButtonClick">點擊我</Button>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">輪廓按鈕</p>
+            <Button outline @click="handleButtonClick">輪廓按鈕</Button>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">禁用按鈕</p>
+            <Button disabled>禁用狀態</Button>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">圓形按鈕</p>
+            <Button shape="rounded" @click="handleButtonClick">圓形按鈕</Button>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">矩形按鈕</p>
+            <Button shape="rectangular" @click="handleButtonClick">矩形按鈕</Button>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">路由連結按鈕</p>
+            <Button link :routeInfo="{ name: 'home' }">返回首頁</Button>
+          </div>
+        </div>
+      </section>
+
+      <!-- BaseInput Section -->
+      <section class="component-section">
+        <h2 class="section-title">BaseInput 輸入框組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">普通輸入框</p>
+            <Input v-model="inputValue" placeholder="請輸入內容" />
+            <p class="text-sm text-gray-500 mt-2">當前值: {{ inputValue }}</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填輸入框</p>
+            <Input
+              v-model="inputValue"
+              required
+              label="姓名"
+              :triggerValidate="triggerValidate"
+              placeholder="請輸入姓名"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Select Section -->
+      <section class="component-section">
+        <h2 class="section-title">Select 下拉選單組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">普通下拉選單</p>
+            <Select
+              v-model="selectValue"
+              selectId="test-select"
+              :options="selectOptions"
+              defaultSelected="請選擇選項"
+            />
+            <p class="text-sm text-gray-500 mt-2">當前值: {{ selectValue }}</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填下拉選單</p>
+            <Select
+              v-model="selectValue"
+              selectId="test-select-required"
+              :options="selectOptions"
+              defaultSelected="請選擇選項"
+              required
+              :triggerValidate="triggerValidate"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Radio Section -->
+      <section class="component-section">
+        <h2 class="section-title">Radio 單選按鈕組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">單選按鈕組</p>
+            <div class="flex flex-col gap-2">
+              <Radio v-model="radioValue" radioName="testRadio" radioId="1" radioText="選項 1" />
+              <Radio v-model="radioValue" radioName="testRadio" radioId="2" radioText="選項 2" />
+              <Radio v-model="radioValue" radioName="testRadio" radioId="3" radioText="選項 3" />
+            </div>
+            <p class="text-sm text-gray-500 mt-2">當前值: {{ radioValue }}</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填單選按鈕</p>
+            <div class="flex flex-col gap-2">
+              <Radio
+                v-model="radioValue"
+                radioName="testRadioRequired"
+                radioId="a"
+                radioText="選項 A"
+                required
+                :triggerValidate="triggerValidate"
+              />
+              <Radio
+                v-model="radioValue"
+                radioName="testRadioRequired"
+                radioId="b"
+                radioText="選項 B"
+                required
+                :triggerValidate="triggerValidate"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Checkbox Section -->
+      <section class="component-section">
+        <h2 class="section-title">Checkbox 複選框組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">複選框</p>
+            <Checkbox v-model="checkboxValue" :option="checkboxOption" />
+            <p class="text-sm text-gray-500 mt-2">當前值: {{ checkboxValue }}</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填複選框</p>
+            <Checkbox
+              v-model="checkboxValue"
+              :option="checkboxOption"
+              required
+              :triggerValidate="triggerValidate"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Textarea Section -->
+      <section class="component-section">
+        <h2 class="section-title">Textarea 文字區域組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">普通文字區域</p>
+            <Textarea v-model="textareaValue" placeholder="請輸入內容，最多4000字" />
+            <p class="text-sm text-gray-500 mt-2">字數: {{ textareaValue.length }}/4000</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填文字區域</p>
+            <Textarea
+              v-model="textareaValue"
+              required
+              label="備註"
+              :triggerValidate="triggerValidate"
+              placeholder="請輸入備註"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- MultipleSelect Section -->
+      <section class="component-section">
+        <h2 class="section-title">MultipleSelect 多選下拉組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">多選下拉選單</p>
+            <MultipleSelect
+              v-model="multipleSelectValue"
+              defaultText="請選擇多個選項"
+              :selectOptions="selectOptions"
+              @confirm="handleMultipleSelectConfirm"
+            />
+            <p class="text-sm text-gray-500 mt-2">已選: {{ multipleSelectValue.join(', ') }}</p>
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">必填多選下拉選單</p>
+            <MultipleSelect
+              v-model="multipleSelectValue"
+              defaultText="請選擇多個選項"
+              :selectOptions="selectOptions"
+              required
+              :triggerValidate="triggerValidate"
+              @confirm="handleMultipleSelectConfirm"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Cardlabel Section -->
+      <section class="component-section">
+        <h2 class="section-title">Cardlabel 卡片標籤組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">折扣標籤</p>
+            <Cardlabel :labelType="CardLabelType.DISCOUNT" title="8折優惠" />
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">VIP標籤</p>
+            <Cardlabel :labelType="CardLabelType.VIP" title="VIP專屬" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Dialog Section -->
+      <section class="component-section">
+        <h2 class="section-title">Dialog 對話框組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">普通對話框</p>
+            <Button @click="isDialogOpen = true">開啟對話框</Button>
+            <Dialog
+              v-model="isDialogOpen"
+              title="提示"
+              content="這是一個普通的對話框訊息"
+              positiveText="確定"
+              negativeText="取消"
+              @onPositiveClick="handleDialogPositive"
+              @onNegativeClick="handleDialogNegative"
+            />
+          </div>
+          <div class="demo-item">
+            <p class="demo-label">警告對話框</p>
+            <Button @click="isAlertDialogOpen = true">開啟警告對話框</Button>
+            <Dialog
+              v-model="isAlertDialogOpen"
+              title="警告"
+              content="這是一個警告訊息，請注意！"
+              positiveText="我知道了"
+              isAlert
+              @onPositiveClick="handleDialogPositive"
+            />
+          </div>
+        </div>
+      </section>
+        <h2 class="section-title">DialogModal 模態對話框組件</h2>
+        <div class="demo-grid">
+          <div class="demo-item">
+            <p class="demo-label">自訂模態框</p>
+            <Button @click="isModalOpen = true">開啟模態框</Button>
+            <DialogModal
+              v-model="isModalOpen"
+              title="自訂標題"
+              content="垃圾分類"
+              type=""
+              :recyclingDate="['週一', '週三', '週五']"
+              :contentFilteredItems="[
+                { name: '紙類', replace: '可回收' },
+                { name: '塑膠', replace: '可回收' }
+              ]"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Validation Test Section -->
+
+
+      <!-- Validation Test Section -->
+      <section class="component-section bg-gray-100 p-6 rounded-lg">
+        <h2 class="section-title">表單驗證測試</h2>
+        <div class="text-center">
+          <Button @click="handleValidateForm" shape="rounded">
+            觸發所有必填欄位驗證
+          </Button>
+          <p class="text-sm text-gray-500 mt-4">
+            點擊此按鈕會觸發所有標記為必填的組件進行驗證
+          </p>
+        </div>
+      </section>
+
+      <!-- Summary Section -->
+      <section class="component-section bg-primary-50 p-6 rounded-lg">
+        <h2 class="section-title">當前表單值總覽</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p class="font-semibold">輸入框值:</p>
+            <p class="text-gray-600">{{ inputValue || '(空)' }}</p>
+          </div>
+          <div>
+            <p class="font-semibold">下拉選單值:</p>
+            <p class="text-gray-600">{{ selectValue || '(未選擇)' }}</p>
+          </div>
+          <div>
+            <p class="font-semibold">單選按鈕值:</p>
+            <p class="text-gray-600">{{ radioValue || '(未選擇)' }}</p>
+          </div>
+          <div>
+            <p class="font-semibold">複選框值:</p>
+            <p class="text-gray-600">{{ checkboxValue.length > 0 ? checkboxValue.join(', ') : '(未選擇)' }}</p>
+          </div>
+          <div>
+            <p class="font-semibold">文字區域值:</p>
+            <p class="text-gray-600">{{ textareaValue || '(空)' }}</p>
+          </div>
+          <div>
+            <p class="font-semibold">多選下拉值:</p>
+            <p class="text-gray-600">
+              {{ multipleSelectValue.length > 0 ? multipleSelectValue.join(', ') : '(未選擇)' }}
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.test-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2rem 0;
+}
+
+.component-section {
+  background: white;
+  border-radius: 1rem;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2d3748;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.demo-item {
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background: #f7fafc;
+}
+
+.demo-label {
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+</style>
+
