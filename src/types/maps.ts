@@ -11,3 +11,14 @@ export interface MapMarkerDescriptor {
   zIndex?: number;
   meta?: Record<string, unknown>;
 }
+
+export interface MapPolylineDescriptor {
+  id: string;
+  path: LatLng[];
+  color?: string;
+  weight?: number;
+  opacity?: number;
+  zIndex?: number;
+  dashed?: boolean;
+  dashSpacing?: string;
+}

@@ -1,5 +1,6 @@
 import { loadGoogleMaps } from '@/composables/useGoogleMapsLoader';
 // import { get } from 'http';
+import type { LatLng } from '@/types/maps';
 import { useUserInfo } from './global';
 
 const {
@@ -60,6 +61,7 @@ const GOOGLE_GEOCODE_ENDPOINT = 'https://maps.googleapis.com/maps/api/geocode/js
 const OBSTACLE_REPORT_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/create';
 const OBSTACLE_ISSUE_LIST_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/getByStatus';
 const OBSTACLE_ISSUE_STATUS_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/update';
+const ROAD_RISK_ENDPOINT = 'https://ynn22-standing-backend.hf.space/map/analyze_road_risk';
 
 type PoliceNewsRecord = {
   roadtype?: string;
@@ -222,6 +224,10 @@ export interface SafeRouteSegment {
   windSpeed: number;
   direction: string;
   note: string;
+  riskLevel?: number;
+  start?: LatLng;
+  end?: LatLng;
+  updatedAt?: string;
 }
 
 export interface SafeNavigationData {
@@ -240,32 +246,168 @@ export const getSafeNavigationData = (): SafeNavigationData => ({
       name: '信義路五段 → 敦化大道',
       windSpeed: 8.5,
       direction: '東北風',
-      note: '建議保持 40km/h 以下，注意側風'
+      note: '建議保持 40km/h 以下，注意側風',
+      start: { lat: 25.0331, lng: 121.5645 },
+      end: { lat: 25.0335, lng: 121.553 },
+      riskLevel: 3
     },
     {
       id: 'sec-2',
       name: '民權東路 → 建國北路',
       windSpeed: 6.2,
       direction: '東風',
-      note: '風速穩定，可保持行車間距'
+      note: '風速穩定，可保持行車間距',
+      start: { lat: 25.0605, lng: 121.5336 },
+      end: { lat: 25.0612, lng: 121.5379 },
+      riskLevel: 2
     },
     {
       id: 'sec-3',
       name: '承德路三段 → 至善路',
       windSpeed: 10.1,
       direction: '東北風',
-      note: '靠山邊風切較強，請降低車速'
+      note: '靠山邊風切較強，請降低車速',
+      start: { lat: 25.0895, lng: 121.5252 },
+      end: { lat: 25.0918, lng: 121.5522 },
+      riskLevel: 4
     },
     {
       id: 'sec-4',
       name: '外雙溪橋段',
       windSpeed: 5.1,
       direction: '東風',
-      note: '路面濕滑，建議開啟霧燈'
+      note: '路面濕滑，建議開啟霧燈',
+      start: { lat: 25.1118, lng: 121.5473 },
+      end: { lat: 25.1174, lng: 121.5529 },
+      riskLevel: 2
     }
   ],
   mapEmbedUrl: VITE_GOOGLE_MAPS_EMBED_SAFE ?? SAFE_NAV_MAP_EMBED_FALLBACK
 });
+
+type RoadRiskRecord = {
+  id?: string;
+  road_name?: string;
+  name?: string;
+  risk_level?: number | string;
+  wind_speed?: number | string;
+  wind_direction?: string;
+  note?: string;
+  description?: string;
+  start_lat?: number | string;
+  start_lng?: number | string;
+  end_lat?: number | string;
+  end_lng?: number | string;
+  start?: {
+    lat?: number | string;
+    lng?: number | string;
+    latitude?: number | string;
+    longitude?: number | string;
+  };
+  end?: {
+    lat?: number | string;
+    lng?: number | string;
+    latitude?: number | string;
+    longitude?: number | string;
+  };
+  updated_at?: string;
+  last_update?: string;
+};
+
+const ensureWindDirectionWord = (value?: string | null): string => {
+  if (!value) {
+    return '風向更新中';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '風向更新中';
+  }
+  return trimmed.includes('風') ? trimmed : `${trimmed}風`;
+};
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const extractCoord = (record: RoadRiskRecord, target: 'start' | 'end'): LatLng | null => {
+  const latKey = target === 'start' ? 'start_lat' : 'end_lat';
+  const lngKey = target === 'start' ? 'start_lng' : 'end_lng';
+  const latFromFlat = toNumber((record as Record<string, unknown>)[latKey]);
+  const lngFromFlat = toNumber((record as Record<string, unknown>)[lngKey]);
+  if (latFromFlat != null && lngFromFlat != null) {
+    return { lat: latFromFlat, lng: lngFromFlat };
+  }
+  const nested = target === 'start' ? record.start : record.end;
+  if (nested && typeof nested === 'object') {
+    const lat = toNumber(
+      (nested as Record<string, unknown>).lat ??
+        (nested as Record<string, unknown>).latitude
+    );
+    const lng = toNumber(
+      (nested as Record<string, unknown>).lng ??
+        (nested as Record<string, unknown>).longitude
+    );
+    if (lat != null && lng != null) {
+      return { lat, lng };
+    }
+  }
+  return null;
+};
+
+export const fetchRoadRiskSegments = async (
+  riskLevel = 5
+): Promise<SafeRouteSegment[]> => {
+  const url = new URL(ROAD_RISK_ENDPOINT);
+  url.searchParams.set('risk_level', String(riskLevel));
+  url.searchParams.set('use_cache', 'true');
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { accept: 'application/json' }
+    });
+    if (!response.ok) {
+      throw new Error(`road risk API failed: ${response.status}`);
+    }
+    const payload = (await response.json()) as RoadRiskRecord[] | { data?: RoadRiskRecord[] };
+    const records = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : [];
+
+    return records
+      .map((record, index) => {
+        const start = extractCoord(record, 'start');
+        const end = extractCoord(record, 'end');
+        if (!start || !end) {
+          return null;
+        }
+        const windSpeed = toNumber(record.wind_speed) ?? 0;
+        const risk = toNumber(record.risk_level) ?? riskLevel;
+        return {
+          id: record.id ?? `risk-${risk}-${index}`,
+          name: record.road_name || record.name || `高風險路段 ${index + 1}`,
+          windSpeed,
+          direction: ensureWindDirectionWord(record.wind_direction),
+          note: record.note || record.description || '避開該路段以確保行車安全。',
+          riskLevel: risk,
+          start,
+          end,
+          updatedAt: record.updated_at ?? record.last_update
+        } as SafeRouteSegment;
+      })
+      .filter((segment): segment is SafeRouteSegment => Boolean(segment));
+  } catch (error) {
+    console.warn('[API] fetch road risk segments failed', error);
+    return [];
+  }
+};
 
 export interface ObstacleTypeOption {
   id: 'tree' | 'sign' | 'accident' | 'others';

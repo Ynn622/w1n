@@ -6,7 +6,7 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import type { PropType } from 'vue';
 import { loadGoogleMaps } from '@/composables/useGoogleMapsLoader';
-import type { LatLng, MapMarkerDescriptor } from '@/types/maps';
+import type { LatLng, MapMarkerDescriptor, MapPolylineDescriptor } from '@/types/maps';
 
 const emit = defineEmits<{
   (e: 'marker-click', marker: MapMarkerDescriptor): void;
@@ -23,6 +23,10 @@ const props = defineProps({
   },
   markers: {
     type: Array as PropType<MapMarkerDescriptor[]>,
+    default: () => []
+  },
+  polylines: {
+    type: Array as PropType<MapPolylineDescriptor[]>,
     default: () => []
   },
   mapOptions: {
@@ -43,6 +47,7 @@ type MarkerHandle = {
 
 const mapInstance = shallowRef<google.maps.Map | null>(null);
 const markerRegistry = new Map<string, MarkerHandle>();
+const polylineRegistry = new Map<string, google.maps.Polyline>();
 let googleInstance: typeof google | null = null;
 
 const toLiteral = (value: LatLng): google.maps.LatLngLiteral => ({ lat: value.lat, lng: value.lng });
@@ -130,6 +135,7 @@ const initMap = async () => {
       ...props.mapOptions
     });
     syncMarkers();
+    syncPolylines();
   } catch (error) {
     console.warn('[GoogleMap] 無法初始化地圖', error);
   }
@@ -291,9 +297,88 @@ onMounted(() => {
   initMap();
 });
 
+const buildPolylineOptions = (
+  descriptor: MapPolylineDescriptor
+): google.maps.PolylineOptions => {
+  const options: google.maps.PolylineOptions = {
+    path: descriptor.path.map(toLiteral),
+    map: mapInstance.value!,
+    strokeColor: descriptor.color ?? '#2563eb',
+    strokeOpacity: descriptor.opacity ?? (descriptor.dashed ? 0 : 0.85),
+    strokeWeight: descriptor.weight ?? 4,
+    zIndex: descriptor.zIndex
+  };
+  if (descriptor.dashed) {
+    const color = descriptor.color ?? '#2563eb';
+    options.icons = [
+      {
+        icon: {
+          path: 'M 0,-1 0,1',
+          strokeOpacity: descriptor.opacity ?? 1,
+          strokeWeight: descriptor.weight ?? 4,
+          strokeColor: color,
+          scale: 1
+        },
+        offset: '0',
+        repeat: descriptor.dashSpacing ?? '16px'
+      }
+    ];
+  }
+  return options;
+};
+
+const createPolyline = (descriptor: MapPolylineDescriptor): google.maps.Polyline => {
+  const googleMaps = googleInstance!;
+  return new googleMaps.maps.Polyline(buildPolylineOptions(descriptor));
+};
+
+const updatePolyline = (
+  polyline: google.maps.Polyline,
+  descriptor: MapPolylineDescriptor
+) => {
+  polyline.setOptions(buildPolylineOptions(descriptor));
+};
+
+const detachPolyline = (polyline: google.maps.Polyline) => {
+  polyline.setMap(null);
+};
+
+const syncPolylines = () => {
+  if (!googleInstance || !mapInstance.value) {
+    return;
+  }
+  const nextIds = new Set(props.polylines.map((polyline) => polyline.id));
+  polylineRegistry.forEach((polyline, id) => {
+    if (!nextIds.has(id)) {
+      detachPolyline(polyline);
+      polylineRegistry.delete(id);
+    }
+  });
+
+  props.polylines.forEach((descriptor) => {
+    const existing = polylineRegistry.get(descriptor.id);
+    if (existing) {
+      updatePolyline(existing, descriptor);
+      return;
+    }
+    const polyline = createPolyline(descriptor);
+    polylineRegistry.set(descriptor.id, polyline);
+  });
+};
+
+watch(
+  () => props.polylines,
+  () => {
+    syncPolylines();
+  },
+  { deep: true }
+);
+
 onBeforeUnmount(() => {
   markerRegistry.forEach(detachMarker);
   markerRegistry.clear();
+  polylineRegistry.forEach(detachPolyline);
+  polylineRegistry.clear();
 });
 </script>
 

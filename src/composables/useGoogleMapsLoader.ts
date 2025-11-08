@@ -21,7 +21,7 @@ export const loadGoogleMaps = (mapId?: string): Promise<typeof google> => {
     const loader = new Loader({
       apiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
       version: 'weekly',
-      libraries: ['marker'],
+      libraries: ['marker', 'geometry'],
       mapIds: effectiveMapId ? [effectiveMapId] : undefined
     });
     loaderPromise = loader.load();
