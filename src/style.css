@@ -42,3 +42,20 @@ img {
 button {
   font: inherit;
 }
+
+.segment-track {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.segment-track__item {
+  flex: 1 1 0;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  transition: background 0.2s ease;
+}
+
+.segment-track__item--active {
+  background: linear-gradient(90deg, #62a3a6, #31949a);
+}

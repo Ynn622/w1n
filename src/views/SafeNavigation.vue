@@ -37,19 +37,11 @@ const selectSegment = (segment: SafeRouteSegment) => {
   selectedSegment.value = segment;
 };
 
-const getWindBarWidth = (speed: number) => {
-  const normalized = Math.min(speed, 15);
-  return `${(normalized / 15) * 100}%`;
-};
-
-const getWindColor = (speed: number) => {
-  if (speed >= 10) {
-    return '#1A6F73';
-  }
-  if (speed >= 7) {
-    return '#31949A';
-  }
-  return '#62A3A6';
+const getWindSegments = (speed: number) => {
+  const segments = 5;
+  const maxSpeed = 15;
+  const ratio = Math.min(speed, maxSpeed) / maxSpeed;
+  return Array.from({ length: segments }, (_, index) => ratio >= (index + 1) / segments);
 };
 </script>
 
@@ -98,14 +90,13 @@ const getWindColor = (speed: number) => {
                 {{ segment.windSpeed.toFixed(1) }} m/s
               </span>
             </div>
-            <div class="wind-bar mt-2">
-              <div
-                class="wind-bar__fill"
-                :style="{
-                  width: getWindBarWidth(segment.windSpeed),
-                  backgroundColor: getWindColor(segment.windSpeed)
-                }"
-              ></div>
+            <div class="segment-track mt-2">
+              <span
+                v-for="(active, index) in getWindSegments(segment.windSpeed)"
+                :key="`${segment.id}-meter-${index}`"
+                class="segment-track__item"
+                :class="{ 'segment-track__item--active': active }"
+              ></span>
             </div>
             <p class="mt-2 text-xs text-grey-500">{{ segment.note }}</p>
           </button>
@@ -165,20 +156,6 @@ const getWindColor = (speed: number) => {
 </template>
 
 <style scoped>
-.wind-bar {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: #edf2f3;
-  overflow: hidden;
-}
-
-.wind-bar__fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.3s ease;
-}
-
 label input:focus {
   outline: none;
   box-shadow: none;

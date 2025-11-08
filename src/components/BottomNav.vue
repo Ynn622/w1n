@@ -27,7 +27,7 @@ const navigateTo = (name: string) => {
         v-for="item in navItems"
         :key="item.name"
         @click="navigateTo(item.name)"
-        class="flex flex-col items-center justify-center flex-1 h-full transition-colors duration-200"
+        class="flex flex-col items-center justify-center flex-1 h-full transition-colors duration-200 rounded-2xl mx-1"
         :class="{
           'text-primary-500 bg-primary-50': route.name === item.name,
           'text-grey-500 hover:text-primary-400 hover:bg-grey-50': route.name !== item.name

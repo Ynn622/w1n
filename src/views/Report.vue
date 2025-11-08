@@ -3,6 +3,10 @@ import { computed, ref } from 'vue';
 import BottomNav from '@/components/BottomNav.vue';
 import Button from '@/components/base/Button.vue';
 import ReportIcon from '@/assets/navicons/Report.png';
+import TreeIcon from '@/assets/reporticon/tree.png';
+import FallenIcon from '@/assets/reporticon/fallen.png';
+import AccidentIcon from '@/assets/reporticon/accident.png';
+import OthersIcon from '@/assets/reporticon/others.png';
 import { getObstacleReportData } from '@/utils/api';
 import type { ObstacleTypeOption } from '@/utils/api';
 
@@ -62,14 +66,37 @@ const getTypeStyle = (type: ObstacleTypeOption, active: boolean) => {
   if (active) {
     return {
       borderColor: type.color,
-      backgroundColor: hexToRgba(type.color, 0.1),
-      boxShadow: `0 8px 24px ${hexToRgba(type.color, 0.25)}`
+      backgroundImage: `linear-gradient(120deg, ${hexToRgba(type.color, 0.15)}, ${hexToRgba(type.color, 0.05)})`,
+      boxShadow: `inset 0 0 0 2px ${hexToRgba(type.color, 0.35)}`,
+      transition: 'background 0.2s ease, box-shadow 0.2s ease'
     };
   }
   return {
-    borderColor: hexToRgba(type.color, 0.4),
-    backgroundColor: '#fff'
+    borderColor: hexToRgba(type.color, 0.35),
+    backgroundColor: '#fff',
+    transition: 'background 0.2s ease, box-shadow 0.2s ease'
   };
+};
+
+const getIconRingStyle = (type: ObstacleTypeOption, active: boolean) => {
+  if (active) {
+    return {
+      background: '#fff',
+      boxShadow: `inset 0 0 0 2px ${hexToRgba(type.color, 0.5)}`,
+      transform: 'scale(1.05)'
+    };
+  }
+  return {
+    background: '#fff',
+    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)'
+  };
+};
+
+const obstacleIconMap: Record<ObstacleTypeOption['id'], string> = {
+  tree: TreeIcon,
+  sign: FallenIcon,
+  accident: AccidentIcon,
+  others: OthersIcon
 };
 </script>
 
@@ -148,7 +175,16 @@ const getTypeStyle = (type: ObstacleTypeOption, active: boolean) => {
             :style="getTypeStyle(type, isSelected(type.id))"
             @click="toggleType(type.id)"
           >
-            <span class="text-3xl">{{ type.icon }}</span>
+            <span
+              class="h-12 w-12 flex items-center justify-center rounded-full shadow-inner transition-all duration-200"
+              :style="getIconRingStyle(type, isSelected(type.id))"
+            >
+              <img
+                :src="obstacleIconMap[type.id]"
+                :alt="type.label"
+                class="h-8 w-8 object-contain"
+              />
+            </span>
             <div class="flex flex-col">
               <p class="text-sm font-semibold text-grey-900">{{ type.label }}</p>
               <p v-if="isSelected(type.id)" class="text-xs text-grey-600">已選取</p>

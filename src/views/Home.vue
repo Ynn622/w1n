@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BottomNav from '@/components/BottomNav.vue';
 import WindIcon from '@/assets/navicons/Wind.png';
-import { getHomeOverview, getWindDetail } from '@/utils/api';
+import { fetchPoliceNews, getHomeOverview, getWindDetail } from '@/utils/api';
 
 const router = useRouter();
+
+const homeOverview = getHomeOverview();
 
 const {
   location,
@@ -16,8 +18,11 @@ const {
   mapPreview,
   googleMapEmbed,
   streetInfo,
-  newsList
-} = getHomeOverview();
+} = homeOverview;
+
+const newsList = ref(homeOverview.newsList);
+const previewNews = computed(() => newsList.value.slice(0, 2));
+const expandedNewsDescriptions = ref<Set<number>>(new Set());
 
 const navigateTo = (routeName: string) => {
   router.push({ name: routeName });
@@ -25,8 +30,11 @@ const navigateTo = (routeName: string) => {
 
 const windDetail = ref(getWindDetail());
 const isWindModalOpen = ref(false);
+const isNewsModalOpen = ref(false);
 const isRefreshingWind = ref(false);
 const lastUpdated = ref(new Date(windDetail.value.updatedAt));
+const isNewsLoading = ref(false);
+const newsError = ref<string | null>(null);
 
 const formatTime = (date: Date) =>
   `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
@@ -40,6 +48,13 @@ const isWindStale = computed(
 const riskSegments = computed(() =>
   Array.from({ length: 5 }).map((_, index) => index < windDetail.value.riskLevel)
 );
+
+const windIntensitySegments = computed(() => {
+  const segments = 5;
+  const value = Number(windInfo.intensity) || 0;
+  const step = 100 / segments;
+  return Array.from({ length: segments }, (_, index) => value >= (index + 1) * step);
+});
 
 const chartWidth = 320;
 const chartHeight = 140;
@@ -104,6 +119,57 @@ const closeWindModal = () => {
   isWindModalOpen.value = false;
 };
 
+const openNewsModal = () => {
+  isNewsModalOpen.value = true;
+};
+
+const closeNewsModal = () => {
+  isNewsModalOpen.value = false;
+  expandedNewsDescriptions.value = new Set();
+};
+
+const splitLines = (value?: string) => {
+  if (!value) return [];
+  const normalized = value.replace(/\\n/g, '\n');
+  return normalized
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean);
+};
+
+const getVisibleDescriptionLines = (id: number, description?: string) => {
+  const lines = splitLines(description);
+  return expandedNewsDescriptions.value.has(id) ? lines : lines.slice(0, 2);
+};
+
+const canShowMoreDescription = (id: number, description?: string) =>
+  !expandedNewsDescriptions.value.has(id) && splitLines(description).length > 2;
+
+const expandDescription = (id: number) => {
+  if (expandedNewsDescriptions.value.has(id)) {
+    return;
+  }
+  const next = new Set(expandedNewsDescriptions.value);
+  next.add(id);
+  expandedNewsDescriptions.value = next;
+};
+
+const loadPoliceNews = async () => {
+  try {
+    isNewsLoading.value = true;
+    newsError.value = null;
+    const latest = await fetchPoliceNews();
+    if (latest.length) {
+      newsList.value = latest;
+    }
+  } catch (error) {
+    console.warn('載入即時訊息失敗', error);
+    newsError.value = '無法取得最新訊息';
+  } finally {
+    isNewsLoading.value = false;
+  }
+};
+
 let fabHoldTimer: number | null = null;
 const fabLongPressTriggered = ref(false);
 
@@ -135,36 +201,46 @@ const handleFabPointerLeave = () => {
   clearFabTimer();
 };
 
-watch(isWindModalOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : '';
-});
+watch(
+  () => isWindModalOpen.value || isNewsModalOpen.value,
+  (open) => {
+    document.body.style.overflow = open ? 'hidden' : '';
+  }
+);
 
 onBeforeUnmount(() => {
   document.body.style.overflow = '';
 });
+
+onMounted(() => {
+  loadPoliceNews();
+});
 </script>
 
 <template>
-  <div class="page-shell min-h-screen bg-[#F8F8F8] pb-24" :class="{ 'modal-open': isWindModalOpen }">
+  <div class="page-shell min-h-screen bg-[#F8F8F8] pb-24" :class="{ 'modal-open': isWindModalOpen || isNewsModalOpen }">
     <main class="mx-auto flex max-w-5xl flex-col gap-2 px-4 pt-6">
       <!-- ① 標題區 -->
+      <h2 class="text-3xl font-bold text-grey-900 ml-2">總覽</h2>
+      <p class="text-sm font-bold text-grey-500 ml-2">目前位址：</p>
+
       <section class="rounded-2xl bg-white px-5 py-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+
+
         <div class="flex flex-col gap-1.5 text-center md:text-left">
-          <div>
-            <h1 class="text-3xl font-bold text-grey-900">即時風況</h1>
-          </div>
-          <p class="text-base font-semibold text-grey-700">目前位址：{{ location }}</p>
+          <p class="text-base font-semibold text-grey-700">{{ location }}</p>
         </div>
       </section>
 
       <!-- ② 即時資訊卡片區 -->
+      <div class="flex mt-2">
+        <p class="flex-none basis-1/2 font-bold text-sm text-grey-500 ml-2">即時風速</p>
+        <p class="flex-none basis-1/2 font-bold text-sm text-grey-500">行車建議</p>
+      </div>
       <section class="info-grid">
-        <div
-          class="info-card rounded-2xl bg-white p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
-        >
+        <div class="info-card rounded-2xl bg-white p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
           <div class="mb-3 flex items-center justify-between">
             <div>
-              <p class="text-sm text-grey-500">即時風速</p>
               <div class="flex items-end gap-2">
                 <span class="text-2xl font-bold text-grey-900">{{ windInfo.speed }}</span>
                 <span class="text-lg text-grey-500">{{ windInfo.unit }}</span>
@@ -172,20 +248,17 @@ onBeforeUnmount(() => {
             </div>
             <div class="text-2xl">🧭</div>
           </div>
+
           <div class="mb-2 flex items-center justify-between text-sm text-grey-600">
             <span>{{ windInfo.direction }}</span>
             <span>{{ windInfo.intensity }}%</span>
           </div>
-          <div class="h-2 rounded-full bg-grey-100">
-            <div
-              class="h-full rounded-full bg-primary-500 transition-all"
-              :style="{ width: `${windInfo.intensity}%` }"
-            ></div>
+          <div class="segment-track mt-1.5">
+            <span v-for="(active, idx) in windIntensitySegments" :key="`wind-intensity-${idx}`"
+              class="segment-track__item" :class="{ 'segment-track__item--active': active }"></span>
           </div>
         </div>
-
         <div class="info-card rounded-2xl bg-white p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-          <p class="text-sm text-grey-500">行車建議</p>
           <h2 class="mb-3 text-xl font-bold text-grey-900">盡可能減少外出</h2>
           <p class="text-sm text-grey-600 leading-relaxed">
             {{ drivingAdvice }}
@@ -215,10 +288,16 @@ onBeforeUnmount(() => {
       </section> -->
 
       <!-- ④ 路況查看區 -->
+      <p class="text-sm font-bold text-grey-500 ml-2 mt-2">{{ mapPreview.title }}</p>
+
       <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div class="mb-3">
-          <h2 class="text-lg font-bold text-grey-900">{{ mapPreview.title }}</h2>
-          <p class="text-sm text-grey-500">{{ mapPreview.updatedAt }}</p>
+        <div class="mb-3 flex items-start justify-between gap-4">
+          <div>
+            <p class="text-sm text-grey-500">{{ mapPreview.updatedAt }}</p>
+          </div>
+          <button class="text-sm font-semibold text-primary-500">
+            {{ mapPreview.addressHint }}
+          </button>
         </div>
         <div class="route-card flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 p-3">
           <!-- <div class="flex items-center justify-between text-sm text-grey-700">
@@ -226,89 +305,121 @@ onBeforeUnmount(() => {
             <span>{{ mapPreview.landmark }}</span>
           </div> -->
           <div class="h-48 overflow-hidden rounded-xl bg-white shadow-inner">
-            <iframe
-              :src="googleMapEmbed"
-              title="Google Maps"
-              class="h-full w-full border-0"
-              loading="lazy"
-              allowfullscreen
-              referrerpolicy="no-referrer-when-downgrade"
-            ></iframe>
+            <iframe :src="googleMapEmbed" title="Google Maps" class="h-full w-full border-0" loading="lazy"
+              allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
-          <div
-            class="rounded-xl border border-dashed border-primary-300 bg-white/70 p-3 text-sm text-grey-700"
-          >
+          <div class="rounded-xl border border-dashed border-primary-300 bg-white/70 p-3 text-sm text-grey-700">
             <div class="font-semibold text-grey-900">街口資訊 (API 預留)</div>
             <div class="text-base text-grey-800">{{ streetInfo.intersection }}</div>
             <div class="text-grey-600">{{ streetInfo.status }}</div>
             <div class="text-[12px] text-grey-500">{{ streetInfo.source }}</div>
           </div>
-          <div class="mt-auto flex justify-end pt-1">
-            <button class="text-sm font-semibold text-primary-500">
-              {{ mapPreview.addressHint }}
-            </button>
-          </div>
         </div>
       </section>
 
       <!-- ⑤ 即時訊息區 -->
+      <p class="text-sm font-bold text-grey-500 ml-3 mt-2">即時訊息</p>
       <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div class="mb-3 flex flex-col gap-2">
-          <h2 class="text-lg font-bold text-grey-900">即時訊息</h2>
+        <div class="mb-3 flex items-center justify-end">
+          <button class="text-sm font-semibold text-primary-500" @click="openNewsModal">
+            查看更多 >
+          </button>
         </div>
-        <div class="space-y-3">
-          <article
-            v-for="item in newsList"
-            :key="item.id"
-            class="flex gap-3 rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
-          >
-            <div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-grey-100">
-              <img
-                v-if="item.thumbnail"
-                :src="item.thumbnail"
-                alt="news thumbnail"
-                class="h-full w-full object-cover"
-              />
-              <div
-                v-else
-                class="h-full w-full bg-gradient-to-br from-primary-100 to-secondary-100"
-              ></div>
-            </div>
-            <div class="flex flex-col">
-              <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
-              <p class="text-sm text-grey-600">
-                {{ item.summary }}
-              </p>
-            </div>
-          </article>
-        </div>
-        <div class="mt-2 flex justify-end">
-          <button class="text-sm font-semibold text-primary-500">查看更多 ></button>
-        </div>
+        <div v-if="isNewsLoading" class="py-6 text-center text-sm text-grey-500">即時訊息更新中...</div>
+        <template v-else>
+          <div class="space-y-3">
+            <article
+              v-for="item in previewNews"
+              :key="item.id"
+              class="flex gap-3 rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+            >
+              <div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-grey-100">
+                <img
+                  v-if="item.thumbnail"
+                  :src="item.thumbnail"
+                  alt="news thumbnail"
+                  class="h-full w-full object-cover"
+                />
+                <div v-else class="h-full w-full bg-gradient-to-br from-primary-100 to-secondary-100"></div>
+              </div>
+              <div class="flex flex-col">
+                <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
+                <p
+                  v-for="(line, idx) in splitLines(item.description)"
+                  :key="`preview-line-${item.id}-${idx}`"
+                  class="text-sm text-grey-600 leading-relaxed"
+                >
+                  {{ line }}
+                </p>
+                <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
+              </div>
+            </article>
+          </div>
+          <p v-if="newsError" class="pt-3 text-center text-xs text-rose-500">{{ newsError }}</p>
+        </template>
       </section>
     </main>
 
     <!-- 風況 FAB -->
-    <button
-      v-if="!isWindModalOpen"
-      class="wind-fab"
-      :class="{ 'wind-fab--stale': isWindStale }"
-      @pointerdown="handleFabPointerDown"
-      @pointerup="handleFabPointerUp"
-      @pointerleave="handleFabPointerLeave"
-      @pointercancel="handleFabPointerLeave"
-    >
+    <button v-if="!isWindModalOpen" class="wind-fab" :class="{ 'wind-fab--stale': isWindStale }"
+      @pointerdown="handleFabPointerDown" @pointerup="handleFabPointerUp" @pointerleave="handleFabPointerLeave"
+      @pointercancel="handleFabPointerLeave">
       <img :src="WindIcon" alt="風況詳情" class="h-10 w-10 object-contain" />
       <span class="wind-fab__dot" v-if="isWindStale"></span>
     </button>
 
+    <!-- 即時訊息 Modal -->
+    <Transition name="news-modal">
+      <div v-if="isNewsModalOpen" class="news-modal__overlay" @click.self="closeNewsModal">
+        <section class="news-modal__panel" @click.stop>
+          <header class="news-modal__header">
+            <div>
+              <p class="text-xs uppercase tracking-[0.3em] text-primary-400">News</p>
+              <h2 class="text-xl font-bold text-grey-900">即時訊息</h2>
+            </div>
+            <button class="news-modal__close" @click="closeNewsModal">✕</button>
+          </header>
+          <div class="news-modal__body">
+            <article
+              v-for="item in newsList"
+              :key="`news-modal-${item.id}`"
+              class="news-modal__item"
+            >
+              <div class="news-modal__thumb">
+                <img v-if="item.thumbnail" :src="item.thumbnail" :alt="`${item.title} thumbnail`" />
+                <div v-else class="news-modal__thumb--fallback"></div>
+              </div>
+              <div class="news-modal__content">
+                <h3 class="news-modal__title">
+                  {{ item.title }}
+                </h3>
+                <p
+                  v-for="(line, idx) in getVisibleDescriptionLines(item.id, item.description)"
+                  :key="`modal-line-${item.id}-${idx}`"
+                  class="news-modal__summary"
+                >
+                  {{ line }}
+                </p>
+                <button
+                  v-if="canShowMoreDescription(item.id, item.description)"
+                  class="news-modal__more"
+                  @click="expandDescription(item.id)"
+                >
+                  更多內容
+                </button>
+                <p class="news-modal__meta">
+                  {{ item.time || '剛剛更新' }}
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
     <!-- 風況詳情 Modal -->
     <Transition name="wind-modal">
-      <div
-        v-if="isWindModalOpen"
-        class="wind-modal__overlay"
-        @click.self="closeWindModal"
-      >
+      <div v-if="isWindModalOpen" class="wind-modal__overlay" @click.self="closeWindModal">
         <section class="wind-modal__panel" @click.stop>
           <header class="wind-modal__header">
             <div class="flex items-center gap-2">
@@ -356,12 +467,8 @@ onBeforeUnmount(() => {
                   <p class="text-xs text-grey-500">{{ windDetail.riskLabel }}</p>
                 </div>
                 <div class="risk-bars">
-                  <span
-                    v-for="(filled, index) in riskSegments"
-                    :key="index"
-                    class="risk-bars__item"
-                    :class="{ 'risk-bars__item--active': filled }"
-                  ></span>
+                  <span v-for="(filled, index) in riskSegments" :key="index" class="risk-bars__item"
+                    :class="{ 'risk-bars__item--active': filled }"></span>
                 </div>
               </div>
             </section>
@@ -372,45 +479,18 @@ onBeforeUnmount(() => {
                 <p class="text-xs text-grey-500">單位：{{ windDetail.unit }}</p>
               </div>
               <div class="trend-chart">
-                <svg
-                  :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <line
-                    v-for="tick in 4"
-                    :key="tick"
-                    :x1="chartPadding"
-                    :x2="chartWidth - chartPadding"
+                <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" xmlns="http://www.w3.org/2000/svg">
+                  <line v-for="tick in 4" :key="tick" :x1="chartPadding" :x2="chartWidth - chartPadding"
                     :y1="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4"
-                    :y2="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4"
-                    stroke="#E5E7EB"
-                    stroke-width="1"
-                    stroke-dasharray="4 6"
-                  />
-                  <path
-                    :d="trendLinePath"
-                    fill="none"
-                    stroke="#31949A"
-                    stroke-width="3"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <circle
-                    v-for="(point, index) in windTrendPoints"
-                    :key="`dot-${index}`"
-                    :cx="point.x"
-                    :cy="point.y"
-                    r="4"
-                    fill="#fff"
-                    stroke="#31949A"
-                    stroke-width="2"
-                  />
+                    :y2="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4" stroke="#E5E7EB" stroke-width="1"
+                    stroke-dasharray="4 6" />
+                  <path :d="trendLinePath" fill="none" stroke="#31949A" stroke-width="3" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                  <circle v-for="(point, index) in windTrendPoints" :key="`dot-${index}`" :cx="point.x" :cy="point.y"
+                    r="4" fill="#fff" stroke="#31949A" stroke-width="2" />
                 </svg>
                 <div class="trend-chart__labels">
-                  <span
-                    v-for="(point, index) in windTrendPoints"
-                    :key="`label-${index}`"
-                  >
+                  <span v-for="(point, index) in windTrendPoints" :key="`label-${index}`">
                     {{ point.hour }}
                   </span>
                 </div>
@@ -508,7 +588,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   align-items: flex-start;
   padding: clamp(1rem, 6vh, 2.5rem) 0.85rem 1.25rem;
-  z-index: 50;
+  z-index: 80;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -642,10 +722,145 @@ onBeforeUnmount(() => {
   animation: slide-up 0.3s ease;
 }
 
+.news-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: clamp(2rem, 10vh, 4rem) clamp(0.75rem, 3vw, 1.5rem) calc(1.5rem + 64px);
+  z-index: 85;
+}
+
+.news-modal__panel {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - clamp(1.5rem, 6vh, 3rem));
+  background: #fff;
+  border-radius: 28px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+}
+
+.news-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f0f0f0;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+}
+
+.news-modal__close {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  color: #888;
+  cursor: pointer;
+}
+
+.news-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 1rem;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 4rem);
+  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-modal__item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 16px;
+  background: #f9fbfb;
+  border: 1px solid #e1f0f1;
+}
+
+.news-modal__thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #eef6f7;
+}
+
+.news-modal__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.news-modal__thumb--fallback {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #d1f1f2, #f4fbfb);
+}
+
+.news-modal__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.news-modal__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.news-modal__summary {
+  font-size: 0.875rem;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.news-modal__meta {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.news-modal__more {
+  border: 1px solid #62a3a6;
+  background: #fff;
+  color: #31949a;
+  border-radius: 999px;
+  padding: 0.25rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: fit-content;
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}
+
+.news-modal-enter-active,
+.news-modal-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.news-modal-enter-from,
+.news-modal-leave-to {
+  opacity: 0;
+}
+
+.news-modal__panel {
+  animation: slide-up 0.28s ease;
+}
+
 @keyframes slide-up {
   from {
     transform: translateY(40px);
   }
+
   to {
     transform: translateY(0);
   }
@@ -656,10 +871,12 @@ onBeforeUnmount(() => {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.2);
   }
+
   100% {
     opacity: 0.6;
     transform: scale(1);
@@ -670,6 +887,7 @@ onBeforeUnmount(() => {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
