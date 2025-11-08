@@ -10,6 +10,7 @@ const props = defineProps<{
 const inputValue = defineModel();
 
 const isValidate = ref(true);
+const inputElement = ref<HTMLInputElement | null>(null);
 
 const validate = () => {
   isValidate.value = !!inputValue.value;
@@ -21,10 +22,15 @@ watch(
     validate();
   }
 );
+
+defineExpose({
+  inputElement
+});
 </script>
 
 <template>
   <input
+    ref="inputElement"
     type="text"
     v-model="inputValue"
     v-bind="$attrs"

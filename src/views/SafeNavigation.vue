@@ -1,20 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import BottomNav from '@/components/BottomNav.vue';
 import Input from '@/components/base/Input.vue';
 import Button from '@/components/base/Button.vue';
 import GoogleMap from '@/components/common/GoogleMap.vue';
-import { fetchRoadRiskSegments, geocodeAddress, getSafeNavigationData } from '@/utils/api';
+import { fetchRoadRiskSegments, geocodeAddress, getSafeNavigationData, reverseGeocode } from '@/utils/api';
 import { loadGoogleMaps } from '@/composables/useGoogleMapsLoader';
 import type { SafeRouteSegment } from '@/utils/api';
 import type { LatLng, MapMarkerDescriptor, MapPolylineDescriptor } from '@/types/maps';
 
-const {
-  defaultStart,
-  defaultEnd,
-  segments,
-  mapEmbedUrl
-} = getSafeNavigationData();
+const { defaultStart, mapEmbedUrl } = getSafeNavigationData();
 
 const DEBUG_SAFE_NAV = true;
 const logSafeNav = (...messages: unknown[]) => {
@@ -23,8 +18,8 @@ const logSafeNav = (...messages: unknown[]) => {
   }
 };
 
-const origin = ref(defaultStart);
-const destination = ref(defaultEnd);
+const origin = ref('定位中...');
+const destination = ref('');
 const originCoords = ref<LatLng | null>(null);
 const destinationCoords = ref<LatLng | null>(null);
 const selectedSegment = ref<SafeRouteSegment | null>(null);
@@ -34,14 +29,32 @@ const mapCenter = ref<LatLng>(defaultSafeCenter);
 const isLocating = ref(false);
 const locationError = ref<string | null>(null);
 const canUseGeolocation = typeof window !== 'undefined' && 'geolocation' in navigator;
-const isOriginGeocoding = ref(false);
 const isDestinationGeocoding = ref(false);
-const originMarkerHint = ref('尚未標記出發點');
-const destinationMarkerHint = ref('尚未標記目的地');
+const originMarkerHint = ref('定位中...');
+const destinationMarkerHint = ref('尚未設定目的地');
 const isSegmentModalOpen = ref(false);
 const isSegmentLoading = ref(false);
 const segmentError = ref<string | null>(null);
-const hazardSegments = ref<SafeRouteSegment[]>(segments);
+const hazardSegments = ref<SafeRouteSegment[]>([]);
+const destinationInputRef = ref<InstanceType<typeof Input> | null>(null);
+const destinationAutocomplete = shallowRef<google.maps.places.Autocomplete | null>(null);
+let destinationAutocompleteListener: google.maps.MapsEventListener | null = null;
+const hasAutoLocatedOrigin = ref(false);
+const fallbackOriginLabel = defaultStart;
+const showHazardMarkers = ref(false);
+const visibleHazardSegments = computed(() => {
+  const point = destinationCoords.value ?? mapCenter.value ?? defaultSafeCenter;
+  const radiusMeters = 2500;
+  return hazardSegments.value.filter((segment) => {
+    if (!segment.start || !segment.end) {
+      return false;
+    }
+    const distStart = haversineDistanceMeters(point, segment.start);
+    const distEnd = haversineDistanceMeters(point, segment.end);
+    return Math.min(distStart, distEnd) <= radiusMeters;
+  });
+});
+const hazardCount = computed(() => visibleHazardSegments.value.length);
 const safeRoutePath = ref<LatLng[]>([]);
 const routeWaypoints = ref<LatLng[]>([]);
 const interferingSegments = ref<SafeRouteSegment[]>([]);
@@ -51,10 +64,7 @@ let googleMapsApi: typeof google | null = null;
 let directionsService: google.maps.DirectionsService | null = null;
 let routeTaskId = 0;
 const routeLegPaths = ref<LatLng[][]>([]);
-
-if (segments.length) {
-  selectedSegment.value = segments[0];
-}
+let originGeocodeTaskId = 0;
 
 const EARTH_RADIUS = 6371000; // meters
 const RISK_BUFFER_METERS = 350;
@@ -62,6 +72,19 @@ const MAX_DETOUR_WAYPOINTS = 8;
 const SCOOTER_TRAVEL_MODE = 'driving';
 const SCOOTER_MODE_PARAM = 'two_wheeler';
 const SCOOTER_DIR_FLAG = 'm';
+const HAZARD_INTERSECTION_THRESHOLD = 120;
+const MAX_ROUTE_ADJUSTMENTS = 3;
+const MAX_AUTO_DETOURS = 4;
+const baseMapStyles: google.maps.MapTypeStyle[] = [
+  {
+    featureType: 'transit',
+    stylers: [{ visibility: 'off' }]
+  },
+  {
+    featureType: 'poi.business',
+    stylers: [{ visibility: 'off' }]
+  }
+];
 
 type RouteComputationResult = {
   overviewPath: LatLng[];
@@ -69,7 +92,13 @@ type RouteComputationResult = {
 };
 
 const canNavigate = computed(() => Boolean(origin.value && destination.value));
-const hazardCount = computed(() => hazardSegments.value.length);
+const mapOptions = computed<google.maps.MapOptions>(() => ({
+  styles: baseMapStyles,
+  fullscreenControl: false,
+  streetViewControl: false,
+  mapTypeControl: false
+}));
+const hasDestination = computed(() => Boolean(destinationCoords.value));
 
 const toXY = (point: LatLng) => {
   const latRad = (point.lat * Math.PI) / 180;
@@ -113,21 +142,29 @@ const computeMidpoint = (start: LatLng, end: LatLng): LatLng => ({
   lng: (start.lng + end.lng) / 2
 });
 
-const buildDetourPoint = (segment: SafeRouteSegment): LatLng | null => {
+const buildDetourPoints = (segment: SafeRouteSegment): LatLng[] => {
   if (!segment.start || !segment.end) {
-    return null;
+    return [];
   }
-  const midpoint = computeMidpoint(segment.start, segment.end);
-  const dirLat = segment.end.lat - segment.start.lat;
-  const dirLng = segment.end.lng - segment.start.lng;
-  const perpLat = -dirLng;
-  const perpLng = dirLat;
-  const length = Math.hypot(perpLat, perpLng) || 1;
-  const offsetMeters = 0.002 + (segment.riskLevel ? segment.riskLevel * 0.0003 : 0.0015);
-  return {
-    lat: midpoint.lat + (perpLat / length) * offsetMeters,
-    lng: midpoint.lng + (perpLng / length) * offsetMeters
-  };
+  const start = segment.start;
+  const end = segment.end;
+  const dirLat = end.lat - start.lat;
+  const dirLng = end.lng - start.lng;
+  const baseLength = Math.hypot(dirLat, dirLng) || 1;
+  const segmentMeters = haversineDistanceMeters(start, end);
+  const offsetMagnitude = 0.0008 + Math.min(segmentMeters / 100000, 0.0025);
+  const fractions = segmentMeters > 150 ? [0.25, 0.5, 0.75] : [0.5];
+  return fractions.map((fraction, index) => {
+    const basePoint = {
+      lat: start.lat + dirLat * fraction,
+      lng: start.lng + dirLng * fraction
+    };
+    const orientation = index % 2 === 0 ? 1 : -1;
+    return {
+      lat: basePoint.lat + (-dirLng / baseLength) * offsetMagnitude * orientation,
+      lng: basePoint.lng + (dirLat / baseLength) * offsetMagnitude * orientation
+    };
+  });
 };
 
 const isSegmentAffectingRoute = (segment: SafeRouteSegment): boolean => {
@@ -152,6 +189,87 @@ const dedupeWaypoints = (points: (LatLng | null)[]): LatLng[] => {
     }
   });
   return unique;
+};
+
+const formatCoordsLabel = (coords: LatLng) =>
+  `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+
+const updateDestinationFromCoords = (coords: LatLng, label?: string) => {
+  destinationCoords.value = coords;
+  mapCenter.value = coords;
+  destinationMarkerHint.value = '目的地已設定';
+  if (label) {
+    destination.value = label;
+  }
+};
+
+const updateOriginFromCoords = async (
+  coords: LatLng,
+  options: { forceLabel?: boolean } = {}
+) => {
+  originCoords.value = coords;
+  mapCenter.value = coords;
+  originMarkerHint.value = '定位成功';
+  const shouldUpdateInput = options.forceLabel ?? true;
+  if (!shouldUpdateInput) {
+    return;
+  }
+  const geocodeId = ++originGeocodeTaskId;
+  origin.value = '定位中...';
+  try {
+    const address = await reverseGeocode(coords.lat, coords.lng);
+    if (originGeocodeTaskId === geocodeId) {
+      origin.value = address;
+    }
+  } catch (error) {
+    logSafeNav('reverseGeocode failed', error);
+    if (originGeocodeTaskId === geocodeId) {
+      origin.value = formatCoordsLabel(coords);
+    }
+  }
+};
+
+const handleDestinationPlaceSelection = (place: google.maps.places.PlaceResult) => {
+  if (!place.geometry?.location) {
+    logSafeNav('Place selection missing geometry', place);
+    return;
+  }
+  const coords = {
+    lat: place.geometry.location.lat(),
+    lng: place.geometry.location.lng()
+  };
+  const label = place.formatted_address ?? place.name ?? formatCoordsLabel(coords);
+  destination.value = label;
+  updateDestinationFromCoords(coords, label);
+};
+
+const setupDestinationAutocomplete = async () => {
+  if (destinationAutocomplete.value) {
+    return;
+  }
+  const inputEl = destinationInputRef.value?.inputElement;
+  if (!inputEl) {
+    return;
+  }
+  const googleMaps = await loadGoogleMaps();
+  if (!googleMaps.maps.places) {
+    if (googleMaps.maps.importLibrary) {
+      await googleMaps.maps.importLibrary('places');
+    } else {
+      throw new Error('Google Maps Places library unavailable.');
+    }
+  }
+  const autocomplete = new googleMaps.maps.places.Autocomplete(inputEl, {
+    fields: ['formatted_address', 'geometry', 'name'],
+    types: ['geocode'],
+    componentRestrictions: { country: ['tw'] }
+  });
+  const listener = autocomplete.addListener('place_changed', () => {
+    handleDestinationPlaceSelection(autocomplete.getPlace());
+  });
+  destinationAutocomplete.value = autocomplete;
+  destinationAutocompleteListener?.remove();
+  destinationAutocompleteListener = listener;
 };
 
 const ensureDirectionsService = async () => {
@@ -287,6 +405,27 @@ const buildFallbackLegPaths = (stops: LatLng[]): LatLng[][] => {
   return paths;
 };
 
+const detectRouteHazards = (
+  path: LatLng[],
+  hazards: SafeRouteSegment[],
+  threshold = HAZARD_INTERSECTION_THRESHOLD
+): SafeRouteSegment[] => {
+  if (path.length < 2 || !hazards.length) {
+    return [];
+  }
+  const routeSegments: { start: LatLng; end: LatLng }[] = [];
+  for (let i = 0; i < path.length - 1; i += 1) {
+    routeSegments.push({ start: path[i], end: path[i + 1] });
+  }
+  return hazards.filter((hazard) => {
+    if (!hazard.start || !hazard.end) {
+      return false;
+    }
+    const hazardSegment = { start: hazard.start, end: hazard.end };
+    return routeSegments.some((segment) => segmentDistanceMeters(segment, hazardSegment) <= threshold);
+  });
+};
+
 const recomputeSafeRoute = async () => {
   routeError.value = null;
   const requestId = ++routeTaskId;
@@ -298,43 +437,71 @@ const recomputeSafeRoute = async () => {
   }
   isRoutePlanning.value = true;
   try {
-    const affecting = hazardSegments.value.filter(isSegmentAffectingRoute);
-    interferingSegments.value = affecting;
-    const detours = dedupeWaypoints(
-      affecting
-        .slice(0, MAX_DETOUR_WAYPOINTS)
-        .map((segment) => buildDetourPoint(segment))
-    );
-    logSafeNav('Route recompute triggered', {
-      affectingCount: affecting.length,
-      detourCount: detours.length
-    });
-    routeWaypoints.value = detours;
-    const stops: LatLng[] = [originCoords.value, ...detours, destinationCoords.value];
-    let overviewPath: LatLng[] = [];
-    let legPaths: LatLng[][] = [];
-    try {
-      const result = await requestRoadAwareRoute(detours);
-      overviewPath = result.overviewPath;
-      legPaths = result.legPaths;
-    } catch (error) {
-      console.warn('[SafeNavigation] directions failed, fallback to straight line', error);
-      overviewPath = stops;
-      routeError.value = '路線以近似直線呈現，請留意地圖。';
+    const nearbyHazards = visibleHazardSegments.value;
+    let attempt = 0;
+    let currentWaypoints: LatLng[] = [];
+    let bestResult: RouteComputationResult | null = null;
+    let intersections: SafeRouteSegment[] = [];
+
+    const applyResult = (result: RouteComputationResult) => {
+      safeRoutePath.value = result.overviewPath;
+      routeLegPaths.value = result.legPaths.length
+        ? result.legPaths
+        : buildFallbackLegPaths([originCoords.value!, ...currentWaypoints, destinationCoords.value!]);
+      activeRouteStepIndex.value = null;
+      const pathMidpoint = safeRoutePath.value[Math.floor(safeRoutePath.value.length / 2)];
+      if (pathMidpoint) {
+        mapCenter.value = pathMidpoint;
+      }
+    };
+
+    while (attempt < MAX_ROUTE_ADJUSTMENTS) {
+      const result = await requestRoadAwareRoute(currentWaypoints);
+      if (requestId !== routeTaskId) {
+        return;
+      }
+      bestResult = result;
+      intersections = detectRouteHazards(result.overviewPath, nearbyHazards);
+      logSafeNav('Hazard detection', {
+        attempt,
+        intersections: intersections.map((item) => item.name)
+      });
+      if (!intersections.length) {
+        routeError.value = null;
+        routeWaypoints.value = currentWaypoints;
+        interferingSegments.value = [];
+        applyResult(result);
+        return;
+      }
+
+      const newDetours = dedupeWaypoints(
+        intersections
+          .slice(0, MAX_AUTO_DETOURS)
+          .flatMap((segment) => buildDetourPoints(segment))
+      ).slice(0, MAX_AUTO_DETOURS);
+
+      const combinedWaypoints = dedupeWaypoints([...currentWaypoints, ...newDetours]).slice(
+        0,
+        MAX_AUTO_DETOURS
+      );
+
+      if (combinedWaypoints.length === currentWaypoints.length) {
+        logSafeNav('No new detours could be added, stopping iteration.');
+        break;
+      }
+      currentWaypoints = combinedWaypoints;
+      attempt += 1;
     }
-    if (requestId !== routeTaskId) {
-      return;
-    }
-    safeRoutePath.value = overviewPath;
-    routeLegPaths.value = legPaths.length ? legPaths : buildFallbackLegPaths(stops);
-    logSafeNav('Route updated', {
-      overviewPoints: safeRoutePath.value.length,
-      legSegments: routeLegPaths.value.length
-    });
-    activeRouteStepIndex.value = null;
-    const pathMidpoint = safeRoutePath.value[Math.floor(safeRoutePath.value.length / 2)];
-    if (pathMidpoint) {
-      mapCenter.value = pathMidpoint;
+
+    routeWaypoints.value = currentWaypoints;
+    interferingSegments.value = intersections;
+    if (bestResult) {
+      applyResult(bestResult);
+      routeError.value = intersections.length
+        ? '部分路段仍與高風險區域接近，請留意行車。'
+        : null;
+    } else {
+      throw new Error('無法取得安全路線');
     }
   } catch (error) {
     if (requestId !== routeTaskId) {
@@ -348,6 +515,7 @@ const recomputeSafeRoute = async () => {
     ].filter((coord): coord is LatLng => Boolean(coord));
     safeRoutePath.value = fallbackStops;
     routeLegPaths.value = buildFallbackLegPaths(fallbackStops);
+    interferingSegments.value = [];
     logSafeNav('Route fallback applied', {
       reason: routeError.value,
       fallbackSegments: routeLegPaths.value.length
@@ -363,10 +531,69 @@ const recomputeSafeRoute = async () => {
 watch(
   [originCoords, destinationCoords, () => hazardSegments.value],
   () => {
-    void recomputeSafeRoute();
+    if (destinationCoords.value) {
+      void recomputeSafeRoute();
+    } else {
+      safeRoutePath.value = [];
+      routeLegPaths.value = [];
+      routeWaypoints.value = [];
+      interferingSegments.value = [];
+      routeError.value = null;
+    }
   },
   { deep: true }
 );
+
+watch(
+  () => destinationInputRef.value?.inputElement,
+  (el) => {
+    if (el) {
+      void setupDestinationAutocomplete();
+    }
+  }
+);
+
+watch(
+  () => destination.value,
+  (value) => {
+    if (!value.trim()) {
+      destinationCoords.value = null;
+      destinationMarkerHint.value = '尚未設定目的地';
+      selectedSegment.value = null;
+      safeRoutePath.value = [];
+      routeLegPaths.value = [];
+      routeWaypoints.value = [];
+      interferingSegments.value = [];
+      routeError.value = null;
+    }
+  }
+);
+
+watch(
+  () => destinationCoords.value,
+  (coords) => {
+    if (!coords) {
+      selectedSegment.value = null;
+    }
+  }
+);
+
+watch(
+  () => visibleHazardSegments.value,
+  (segments) => {
+    if (!destinationCoords.value || !segments.length) {
+      selectedSegment.value = null;
+      return;
+    }
+    if (!selectedSegment.value || !segments.some((seg) => seg.id === selectedSegment.value?.id)) {
+      selectedSegment.value = segments[0];
+    }
+  }
+);
+
+onBeforeUnmount(() => {
+  destinationAutocompleteListener?.remove();
+});
 
 const routeSummaryText = computed(() => {
   if (!originCoords.value || !destinationCoords.value) {
@@ -396,16 +623,19 @@ const focusRouteStep = (stepIndex: number) => {
   activeRouteStepIndex.value = stepIndex;
 };
 const resetNavigation = () => {
-  origin.value = '';
   destination.value = '';
-  originCoords.value = null;
   destinationCoords.value = null;
+  destinationMarkerHint.value = '尚未設定目的地';
   selectedSegment.value = null;
-  originMarkerHint.value = '尚未標記出發點';
-  destinationMarkerHint.value = '尚未標記目的地';
   safeRoutePath.value = [];
   routeWaypoints.value = [];
   interferingSegments.value = [];
+  routeError.value = null;
+  if (!originCoords.value) {
+    autoDetectOrigin();
+  } else {
+    mapCenter.value = originCoords.value;
+  }
 };
 
 const formatCoord = (coord: LatLng) => `${coord.lat},${coord.lng}`;
@@ -479,12 +709,12 @@ const locationLabel = computed(() => {
 });
 
 const hazardPolylines = computed<MapPolylineDescriptor[]>(() =>
-  hazardSegments.value
+  visibleHazardSegments.value
     .filter((segment) => segment.start && segment.end)
     .map((segment, index) => ({
       id: `hazard-line-${segment.id ?? index}`,
       path: [segment.start!, segment.end!],
-      color: '#EA580C',
+      color: '#EF4444',
       weight: 4,
       opacity: 0.95,
       zIndex: 25,
@@ -494,9 +724,13 @@ const hazardPolylines = computed<MapPolylineDescriptor[]>(() =>
 );
 
 const ROUTE_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const MAX_DISPLAY_STOPS = 3;
 
-const hazardMarkers = computed<MapMarkerDescriptor[]>(() =>
-  hazardSegments.value
+const hazardMarkers = computed<MapMarkerDescriptor[]>(() => {
+  if (!showHazardMarkers.value) {
+    return [];
+  }
+  return visibleHazardSegments.value
     .filter((segment) => segment.start && segment.end)
     .map((segment, index) => {
       const start = segment.start!;
@@ -509,13 +743,13 @@ const hazardMarkers = computed<MapMarkerDescriptor[]>(() =>
       return {
         id: `hazard-${segment.id ?? index}`,
         position: midpoint,
-        color: '#F97316',
+        color: '#EF4444',
         label: shortLabel,
         zIndex: 15,
         meta: { segment }
       };
-    })
-);
+    });
+});
 
 const routeStops = computed<LatLng[]>(() => {
   if (!originCoords.value || !destinationCoords.value) {
@@ -523,6 +757,26 @@ const routeStops = computed<LatLng[]>(() => {
   }
   return [originCoords.value, ...routeWaypoints.value, destinationCoords.value];
 });
+
+const displayStops = computed<LatLng[]>(() => {
+  const stops = routeStops.value;
+  if (stops.length <= MAX_DISPLAY_STOPS) {
+    return stops;
+  }
+  const lastIndex = stops.length - 1;
+  const midIndex = Math.floor(lastIndex / 2);
+  return [stops[0], stops[midIndex], stops[lastIndex]];
+});
+
+const originStatusClass = computed(() => ({
+  'planner-status-dot': true,
+  'planner-status-dot--active': Boolean(originCoords.value)
+}));
+
+const destinationStatusClass = computed(() => ({
+  'planner-status-dot': true,
+  'planner-status-dot--active': Boolean(destinationCoords.value)
+}));
 
 const isRouteReady = computed(() => routeStops.value.length >= 2);
 
@@ -557,9 +811,9 @@ const computePathLength = (path: LatLng[]): number => {
 };
 
 const routeStepMarkers = computed<MapMarkerDescriptor[]>(() =>
-  routeStops.value.map((point, index) => {
+  displayStops.value.map((point, index, arr) => {
     const label = ROUTE_LABELS[index] ?? `P${index + 1}`;
-    const isDestination = index === routeStops.value.length - 1;
+    const isDestination = index === arr.length - 1;
     return {
       id: `route-step-${index}`,
       position: point,
@@ -583,13 +837,12 @@ type RouteStepDetail = {
 };
 
 const routeStepDetails = computed<RouteStepDetail[]>(() => {
-  const stops = routeStops.value;
+  const stops = displayStops.value;
   if (stops.length < 2) {
     return [];
   }
   return stops.slice(0, -1).map((start, index) => {
     const end = stops[index + 1];
-    const path = routeLegPaths.value[index] ?? [start, end];
     return {
       id: `route-step-${index}`,
       label: `${ROUTE_LABELS[index] ?? `P${index + 1}`} → ${
@@ -599,8 +852,8 @@ const routeStepDetails = computed<RouteStepDetail[]>(() => {
       toLabel: ROUTE_LABELS[index + 1] ?? `P${index + 2}`,
       start,
       end,
-      midpoint: path[Math.floor(path.length / 2)] ?? computeMidpoint(start, end),
-      distance: computePathLength(path)
+      midpoint: computeMidpoint(start, end),
+      distance: haversineDistanceMeters(start, end)
     };
   });
 });
@@ -608,11 +861,16 @@ const routeStepDetails = computed<RouteStepDetail[]>(() => {
 const activeRouteStepIndex = ref<number | null>(null);
 
 const routeLabelChain = computed(() => {
-  if (!routeStops.value.length) {
+  if (!displayStops.value.length) {
     return '';
   }
-  const labels = routeStops.value.map((_, index) => ROUTE_LABELS[index] ?? `P${index + 1}`);
-  return labels.join(' → ');
+  const labels = displayStops.value.map((_, index) => ROUTE_LABELS[index] ?? `P${index + 1}`);
+  if (labels.length <= MAX_DISPLAY_STOPS) {
+    return labels.join(' → ');
+  }
+  const head = labels.slice(0, 2).join(' → ');
+  const tail = labels.slice(-1).join(' → ');
+  return `${head} → … → ${tail}`;
 });
 
 const safeMapMarkers = computed<MapMarkerDescriptor[]>(() => {
@@ -667,35 +925,36 @@ const mapPolylines = computed<MapPolylineDescriptor[]>(() => [
   ...routeLegPolylines.value
 ]);
 
-const applyMarkerFromInput = async (type: 'origin' | 'destination') => {
-  const targetValue = type === 'origin' ? origin.value.trim() : destination.value.trim();
-  if (!targetValue) {
-    if (type === 'origin') {
-      originMarkerHint.value = '請先輸入出發點';
-    } else {
-      destinationMarkerHint.value = '請先輸入目的地';
-    }
+const editOriginManually = async () => {
+  const manualInput = window.prompt('輸入新的出發點', origin.value || '');
+  if (!manualInput) {
     return;
   }
-
-  const loadingRef = type === 'origin' ? isOriginGeocoding : isDestinationGeocoding;
-  const hintRef = type === 'origin' ? originMarkerHint : destinationMarkerHint;
-  const coordRef = type === 'origin' ? originCoords : destinationCoords;
-
-  loadingRef.value = true;
-  hintRef.value = '定位中...';
-
-  const coords = await geocodeAddress(targetValue);
-  loadingRef.value = false;
-
+  originMarkerHint.value = '定位中...';
+  const coords = await geocodeAddress(manualInput.trim());
   if (!coords) {
-    hintRef.value = '無法標記，請確認地址';
+    originMarkerHint.value = '找不到該位置，請重新輸入';
     return;
   }
+  origin.value = manualInput;
+  await updateOriginFromCoords(coords, { forceLabel: true });
+};
 
-  coordRef.value = coords;
-  mapCenter.value = coords;
-  hintRef.value = `已標記：${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+const syncDestinationFromInput = async () => {
+  const targetValue = destination.value.trim();
+  if (!targetValue) {
+    destinationMarkerHint.value = '請先輸入目的地';
+    return;
+  }
+  isDestinationGeocoding.value = true;
+  destinationMarkerHint.value = '定位中...';
+  const coords = await geocodeAddress(targetValue);
+  isDestinationGeocoding.value = false;
+  if (!coords) {
+    destinationMarkerHint.value = '找不到對應的地點，請重新輸入';
+    return;
+  }
+  updateDestinationFromCoords(coords, targetValue);
 };
 
 const loadHazardSegments = async () => {
@@ -705,9 +964,6 @@ const loadHazardSegments = async () => {
     const remoteSegments = await fetchRoadRiskSegments(5);
     if (remoteSegments.length) {
       hazardSegments.value = remoteSegments;
-      selectedSegment.value = remoteSegments[0];
-    } else if (!selectedSegment.value && hazardSegments.value.length) {
-      selectedSegment.value = hazardSegments.value[0];
     }
   } catch (error) {
     segmentError.value =
@@ -717,39 +973,78 @@ const loadHazardSegments = async () => {
   }
 };
 
-const requestUserLocation = () => {
+const geolocationConfig: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 30000
+};
+
+const requestUserLocation = (
+  options: { forceSyncOrigin?: boolean; markAutoOrigin?: boolean } = {}
+) => {
   if (!canUseGeolocation || typeof navigator === 'undefined') {
     locationError.value = '此裝置不支援定位功能';
+    if (!originCoords.value) {
+      originCoords.value = defaultSafeCenter;
+      origin.value = fallbackOriginLabel;
+      originMarkerHint.value = '使用預設出發點';
+    }
     return;
   }
   isLocating.value = true;
   locationError.value = null;
   navigator.geolocation.getCurrentPosition(
-    (position) => {
+    async (position) => {
       const { latitude, longitude } = position.coords;
       const coords = { lat: latitude, lng: longitude };
       userCoords.value = coords;
       mapCenter.value = coords;
+      if (options.markAutoOrigin) {
+        hasAutoLocatedOrigin.value = true;
+      }
+      const shouldSyncOrigin = options.forceSyncOrigin ?? true;
+      if (shouldSyncOrigin) {
+        await updateOriginFromCoords(coords, { forceLabel: options.forceSyncOrigin });
+      }
       isLocating.value = false;
     },
     (error) => {
       isLocating.value = false;
+      if (options.markAutoOrigin) {
+        hasAutoLocatedOrigin.value = true;
+      }
       switch (error.code) {
         case error.PERMISSION_DENIED:
           locationError.value = '使用者拒絕定位授權';
+          originMarkerHint.value = '需要授權才能定位';
           break;
         case error.POSITION_UNAVAILABLE:
           locationError.value = '定位資訊不可用';
+          originMarkerHint.value = '定位資訊不可用';
           break;
         case error.TIMEOUT:
           locationError.value = '定位逾時，請重新嘗試';
+          originMarkerHint.value = '定位逾時，請重試';
           break;
         default:
           locationError.value = '無法取得定位資訊';
+          originMarkerHint.value = '定位失敗';
+      }
+      if (!originCoords.value) {
+        originCoords.value = defaultSafeCenter;
+        origin.value = fallbackOriginLabel;
+        originMarkerHint.value = '使用預設出發點';
       }
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    geolocationConfig
   );
+};
+
+const autoDetectOrigin = () => {
+  if (hasAutoLocatedOrigin.value || !canUseGeolocation) {
+    return;
+  }
+  requestUserLocation({ forceSyncOrigin: true, markAutoOrigin: true });
 };
 
 const handleMarkerClick = (marker: MapMarkerDescriptor) => {
@@ -762,6 +1057,7 @@ const handleMarkerClick = (marker: MapMarkerDescriptor) => {
 
 onMounted(() => {
   loadHazardSegments();
+  autoDetectOrigin();
 });
 </script>
 
@@ -769,49 +1065,92 @@ onMounted(() => {
   <div class="safe-nav-page min-h-screen bg-white pb-24" :class="{ 'modal-open': isSegmentModalOpen }">
     <main class="mx-auto flex max-w-5xl flex-col gap-4 px-4 pt-6">
       <!--  輸入區 -->
-      <section class="rounded-2xl border border-grey-100 px-4 py-4 shadow-sm">
-        <div class="space-y-5">
-          <div>
-            <label class="flex items-center gap-3 rounded-xl border border-grey-200 px-4 py-3">
-              <span class="text-2xl text-primary-500">📍</span>
-              <div class="flex w-full items-center gap-3">
-                <Input
-                  v-model="origin"
-                  placeholder="輸入出發點"
-                  class="w-full border-0 bg-transparent p-0 text-base text-grey-900 focus:ring-0"
-                />
-                <button
-                  type="button"
-                  class="marker-btn"
-                  :disabled="isOriginGeocoding"
-                  @click="applyMarkerFromInput('origin')"
-                >
-                  {{ isOriginGeocoding ? '定位中' : '標記' }}
-                </button>
-              </div>
-            </label>
-            <p class="marker-hint">{{ originMarkerHint }}</p>
+      <section class="planner-panel rounded-2xl border border-grey-100 px-4 py-4 shadow-sm">
+        <div class="planner-origin-row">
+          <div class="planner-origin-info">
+            <div class="planner-label-row">
+              <span :class="originStatusClass"></span>
+              <p class="planner-label">出發點 · 目前位置</p>
+            </div>
+            <p class="planner-value">{{ origin || '定位中...' }}</p>
+            <p class="planner-hint">{{ originMarkerHint }}</p>
           </div>
-          <div>
-            <label class="flex items-center gap-3 rounded-xl border border-grey-200 px-4 py-3">
-              <span class="text-2xl text-primary-500">🎯</span>
-              <div class="flex w-full items-center gap-3">
-                <Input
-                  v-model="destination"
-                  placeholder="輸入目的地"
-                  class="w-full border-0 bg-transparent p-0 text-base text-grey-900 focus:ring-0"
+          <div class="planner-origin-actions">
+            <button type="button" class="planner-icon-btn" @click="editOriginManually">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M4 17.25V20h2.75L17.81 8.94l-2.75-2.75L4 17.25Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
                 />
-                <button
-                  type="button"
-                  class="marker-btn"
-                  :disabled="isDestinationGeocoding"
-                  @click="applyMarkerFromInput('destination')"
-                >
-                  {{ isDestinationGeocoding ? '定位中' : '標記' }}
-                </button>
-              </div>
-            </label>
-            <p class="marker-hint">{{ destinationMarkerHint }}</p>
+                <path
+                  d="m15.75 6.19 1.5-1.5 2.75 2.75-1.5 1.5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="planner-icon-btn"
+              :disabled="isLocating"
+              @click="requestUserLocation({ forceSyncOrigin: true })"
+            >
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M21 4v6h-6"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M3 20v-6h6"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M20.49 15.63A8.5 8.5 0 1 1 18 7.34"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="planner-destination-row">
+          <span :class="destinationStatusClass"></span>
+          <div class="flex planner-input-shell">
+            <Input
+              ref="destinationInputRef"
+              v-model="destination"
+              placeholder="搜尋目的地或貼上地址"
+              class="flex planner-input"
+            />
+            <button
+              type="button"
+              class="flex planner-search-btn items-end justify-end"
+              :disabled="isDestinationGeocoding"
+              @click="syncDestinationFromInput"
+            >
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.8" />
+                <path
+                  d="M20 20L16.65 16.65"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       </section>
@@ -821,31 +1160,42 @@ onMounted(() => {
           <p class="segment-summary__eyebrow">避開高風速</p>
           <p class="segment-summary__title">
             {{
-              selectedSegment
-                ? selectedSegment.name
-                : hazardCount
-                  ? '安全路線規劃'
-                  : '暫無高風險路段'
+              hasDestination
+                ? selectedSegment
+                  ? selectedSegment.name
+                  : hazardCount
+                    ? '尚未選取路段'
+                    : '暫無高風險路段'
+                : '輸入目的地以開始'
             }}
           </p>
-          <p class="segment-summary__hint">{{ routeSummaryText }}</p>
-          <p v-if="routeLabelChain" class="segment-summary__note">
+          <p class="segment-summary__hint">
+            {{ hasDestination ? routeSummaryText : '請先輸入目的地以規劃路線' }}
+          </p>
+          <p v-if="routeLabelChain && hasDestination" class="segment-summary__note">
             路線節點：{{ routeLabelChain }}
           </p>
           <p v-else-if="isSegmentLoading" class="segment-summary__note">高風險路段分析中...</p>
           <p v-else-if="segmentError" class="segment-summary__note text-rose-500">{{ segmentError }}</p>
+          <p v-else-if="!hasDestination" class="segment-summary__note">目的地尚未設定</p>
           <p v-else-if="!hazardCount" class="segment-summary__note">目前沒有需要避開的風險路段</p>
-          <p v-if="selectedSegment" class="segment-summary__note text-xs text-grey-500">
+          <p v-if="selectedSegment && hasDestination" class="segment-summary__note text-xs text-grey-500">
             {{ selectedSegment.note }}
           </p>
         </div>
         <button
           type="button"
           class="segment-summary__action"
-          :disabled="isSegmentLoading && !hazardCount"
+          :disabled="!hasDestination || isSegmentLoading || !hazardCount"
           @click="openSegmentModal"
         >
-          {{ isSegmentLoading && !hazardCount ? '載入中' : '查看建議' }}
+          {{
+            !hasDestination
+              ? '等待目的地'
+              : isSegmentLoading && !hazardCount
+                ? '載入中'
+                : '查看建議'
+          }}
         </button>
       </section>
 
@@ -857,68 +1207,27 @@ onMounted(() => {
             :markers="safeMapMarkers"
             :polylines="mapPolylines"
             :zoom="14"
+            :map-options="mapOptions"
             @marker-click="handleMarkerClick"
           />
-          <div class="map-embed__badge">導航預覽</div>
           <div class="map-embed__actions">
             <button
               type="button"
               class="map-action-btn"
               :disabled="isLocating"
-              @click="requestUserLocation"
+              @click="requestUserLocation({ forceSyncOrigin: true })"
             >
               {{ isLocating ? '定位中...' : '重新定位' }}
-            </button>
-            <button type="button" class="map-action-btn" @click="resetNavigation">
-              清除輸入
             </button>
             <button
               type="button"
               class="map-action-btn"
-              :disabled="!originCoords || !destinationCoords"
-              @click="recomputeSafeRoute"
+              @click="showHazardMarkers = !showHazardMarkers"
             >
-              重新規劃
-            </button>
-            <button type="button" class="map-action-btn map-action-btn--primary" @click="openSafeMap">
-              Google Maps
+              {{ showHazardMarkers ? '隱藏危險標記' : '顯示危險標記' }}
             </button>
           </div>
-          <div class="absolute inset-x-4 top-4 rounded-2xl bg-white/95 p-4 shadow">
-            <div v-if="selectedSegment">
-              <p class="text-xs uppercase tracking-widest text-grey-500">已選路段</p>
-              <h3 class="mt-1 text-lg font-bold text-primary-600">{{ selectedSegment.name }}</h3>
-              <p v-if="selectedSegment.riskLevel" class="text-xs font-semibold text-rose-500">
-                風險等級 {{ selectedSegment.riskLevel }}（數值越高代表風勢越強）
-              </p>
-              <p class="text-sm text-grey-600">
-                {{ selectedSegment.direction }}，風速 {{ selectedSegment.windSpeed.toFixed(1) }} m/s
-              </p>
-              <p class="mt-1 text-xs text-grey-500">{{ selectedSegment.note }}</p>
-            </div>
-            <div v-else>
-              <p class="text-sm font-semibold text-grey-800">{{ routeSummaryText }}</p>
-              <p class="text-xs text-grey-500">
-                {{
-                  interferingSegments.length
-                    ? `路線已自動避開 ${interferingSegments.length} 段風險路段`
-                    : '地圖顯示建議路線，起終點已標記。'
-                }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <section class="rounded-2xl border border-dashed border-primary-100 bg-white/90 px-4 py-4 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-grey-500">定位資訊</p>
-        <p class="mt-1 text-sm text-grey-700">
-          授權定位後可快速將導航路線聚焦於您的所在位置。
-        </p>
-        <div class="mt-3 rounded-xl border border-grey-100 bg-white/70 px-3 py-2 text-xs text-grey-600">
-          <p class="font-semibold text-grey-800">目前鎖定：{{ locationLabel }}</p>
-          <p v-if="locationError" class="mt-1 text-rose-500">{{ locationError }}</p>
-          <p v-else class="mt-1 text-grey-400">若未跳出定位授權提示，請確認 App 已開啟 GPS 權限。</p>
         </div>
       </section>
 
@@ -958,7 +1267,7 @@ onMounted(() => {
             </template>
             <template v-else>
               <p class="segment-modal__intro">
-                共 {{ routeStops.length }} 個節點。點擊即可定位至該段（例如 A → B）。
+                共 {{ displayStops.length }} 個節點。點擊即可定位至該段（例如 A → B）。
               </p>
               <button
                 v-for="(step, index) in routeStepDetails"
@@ -1009,29 +1318,6 @@ label input:focus {
 
 .safe-nav-page.modal-open {
   overflow: hidden;
-}
-
-.marker-btn {
-  padding: 0.35rem 0.95rem;
-  border-radius: 999px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border: 1px solid #62a3a6;
-  color: #fff;
-  background: linear-gradient(90deg, #62a3a6, #7bc3c5);
-  transition: opacity 0.2s ease;
-  cursor: pointer;
-}
-
-.marker-btn:disabled {
-  opacity: 0.6;
-}
-
-.marker-hint {
-  margin-top: 0.35rem;
-  padding-left: 2.5rem;
-  font-size: 0.75rem;
-  color: #6b7280;
 }
 
 .segment-summary {
@@ -1223,6 +1509,147 @@ label input:focus {
   margin-top: 0.75rem;
   font-size: 0.75rem;
   color: #475569;
+}
+
+.planner-panel {
+  background: #fdfefe;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+}
+
+.planner-origin-row,
+.planner-destination-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.planner-origin-row {
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.planner-origin-info {
+  flex: 1;
+}
+
+.planner-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #94a3b8;
+  margin-bottom: 0.15rem;
+}
+
+.planner-value {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.planner-hint {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.planner-origin-row .planner-hint {
+  margin-top: 0.35rem;
+}
+
+.planner-origin-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.planner-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+  color: #0f172a;
+}
+
+.planner-icon-btn:disabled {
+  opacity: 0.5;
+}
+
+.planner-icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.planner-destination-row {
+  background: #f8fafc;
+}
+
+.planner-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.planner-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #cbd5f5;
+  border: 2px solid #e2e8f0;
+  display: inline-block;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.planner-status-dot--active {
+  background: #22c55e;
+  border-color: #d1fae5;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.planner-input-shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid #e2e8f0;
+  padding-left: 0.5rem;
+  position: relative;
+}
+
+.planner-input {
+  border: none;
+  background: transparent;
+  padding: 0.65rem 0.5rem;
+  font-size: 1rem;
+}
+
+.planner-input:focus-visible {
+  outline: none;
+}
+
+.planner-search-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #0f172a;
+  margin-left: auto;
+}
+
+.planner-search-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.planner-search-btn:disabled {
+  opacity: 0.4;
 }
 
 .segment-modal-enter-active,

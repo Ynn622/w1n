@@ -517,19 +517,9 @@ onActivated(() => {
           </div>
           <button
             class="flex h-9 w-9 items-center justify-center rounded-full border border-primary-200 text-primary-500 shadow-sm"
-            @click="requestUserLocation"
-            :disabled="isLocating"
-            aria-label="更新定位"
-          >
-            <svg
-              class="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+            @click="requestUserLocation" :disabled="isLocating" aria-label="更新定位">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-9-9" />
               <path d="M16 6h5v5" />
               <path d="m21 6-4 4" />
@@ -537,7 +527,7 @@ onActivated(() => {
           </button>
         </div>
         <p class="mt-2 text-xs text-grey-400">
-          若 Android 裝置未跳出定位授權提示，請點擊「更新定位」並確認 App 已獲得 GPS 權限。
+          若 Android 裝置未跳出定位授權提示，<br>請點擊「更新定位」並確認 App 已獲得 GPS 權限。
         </p>
       </section>
 
@@ -609,75 +599,49 @@ onActivated(() => {
       </section> -->
 
       <!-- ④ 路況查看區 -->
-      <p class="text-sm font-bold text-grey-500 ml-2 mt-2">{{ mapPreview.title }}</p>
-
-      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div class="mb-3 flex items-start justify-between gap-4">
-          <div>
-            <p class="text-sm text-grey-500">{{ mapPreview.updatedAt }}</p>
-          </div>
-          <button
-            type="button"
-            class="text-sm font-semibold text-primary-500"
-            @click="navigateTo('traffic')"
-          >
+      <div class="flex mt-2">
+        <p class="flex text-sm font-bold text-grey-500 ml-2 ">{{ mapPreview.title }}</p>
+        <div class="flex  gap-4 justify-end flex-1">
+          <button type="button" class="text-sm font-semibold text-primary-500" @click="navigateTo('traffic')">
             {{ mapPreview.addressHint }}
           </button>
         </div>
+      </div>
+
+      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div class="route-card flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 p-3">
           <div class="map-embed map-embed--compact">
             <GoogleMap :center="mapCenter" :markers="homeMapMarkers" :zoom="15" />
-            <div class="map-embed__badge">
-              {{ mapPreview.road }}・{{ mapPreview.landmark }}
-            </div>
+
             <div class="map-embed__actions">
-              <button
-                type="button"
-                class="map-action-btn"
-                @click="requestUserLocation"
-              >
+              <button type="button" class="map-action-btn" @click="requestUserLocation">
                 重新定位
               </button>
-              <button
-                type="button"
-                class="map-action-btn map-action-btn--primary"
-                @click="openMapInGoogle"
-              >
-                開啟 Google Maps
-              </button>
+
             </div>
           </div>
-          <div class="rounded-xl border border-dashed border-primary-300 bg-white/70 p-3 text-sm text-grey-700">
-            <div class="font-semibold text-grey-900">街口資訊 (API 預留)</div>
-            <div class="text-base text-grey-800">{{ streetInfo.intersection }}</div>
-            <div class="text-grey-600">{{ streetInfo.status }}</div>
-            <div class="text-[12px] text-grey-500">{{ streetInfo.source }}</div>
-          </div>
+
         </div>
       </section>
 
       <!-- ⑤ 即時訊息區 -->
-      <p class="text-sm font-bold text-grey-500 ml-3 mt-2">即時訊息</p>
-      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        <div class="mb-3 flex items-center justify-end">
+      <div class="flex mt-2">
+        <p class="flex text-sm font-bold text-grey-500 ml-3">即時訊息</p>
+        <div class="flex-1 justify-end flex">
           <button class="text-sm font-semibold text-primary-500" @click="openNewsModal">
             查看更多 >
           </button>
         </div>
+      </div>
+      <section class="rounded-2xl bg-white px-3 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div v-if="isNewsLoading" class="py-6 text-center text-sm text-grey-500">即時訊息更新中...</div>
         <template v-else>
           <div class="space-y-3">
-            <article
-              v-for="item in previewNews"
-              :key="item.id"
-              class="rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
-            >
+            <article v-for="item in previewNews" :key="item.id"
+              class="rounded-2xl bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
               <h3 class="mb-2 text-base font-semibold text-grey-900">{{ item.title }}</h3>
-              <p
-                v-for="(line, idx) in splitLines(item.description)"
-                :key="`preview-line-${item.id}-${idx}`"
-                class="text-sm text-grey-600 leading-relaxed"
-              >
+              <p v-for="(line, idx) in splitLines(item.description)" :key="`preview-line-${item.id}-${idx}`"
+                class="text-sm text-grey-600 leading-relaxed">
                 {{ line }}
               </p>
               <p class="mt-2 text-xs text-grey-400">{{ item.time || '剛剛更新' }}</p>
@@ -708,27 +672,17 @@ onActivated(() => {
             <button class="news-modal__close" @click="closeNewsModal">✕</button>
           </header>
           <div class="news-modal__body">
-            <article
-              v-for="item in newsList"
-              :key="`news-modal-${item.id}`"
-              class="news-modal__item"
-            >
+            <article v-for="item in newsList" :key="`news-modal-${item.id}`" class="news-modal__item">
               <div class="news-modal__content">
                 <h3 class="news-modal__title">
                   {{ item.title }}
                 </h3>
-                <p
-                  v-for="(line, idx) in getVisibleDescriptionLines(item.id, item.description)"
-                  :key="`modal-line-${item.id}-${idx}`"
-                  class="news-modal__summary"
-                >
+                <p v-for="(line, idx) in getVisibleDescriptionLines(item.id, item.description)"
+                  :key="`modal-line-${item.id}-${idx}`" class="news-modal__summary">
                   {{ line }}
                 </p>
-                <button
-                  v-if="canShowMoreDescription(item.id, item.description)"
-                  class="news-modal__more"
-                  @click="expandDescription(item.id)"
-                >
+                <button v-if="canShowMoreDescription(item.id, item.description)" class="news-modal__more"
+                  @click="expandDescription(item.id)">
                   更多內容
                 </button>
                 <p class="news-modal__meta">
@@ -835,17 +789,15 @@ onActivated(() => {
                   <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" xmlns="http://www.w3.org/2000/svg">
                     <line v-for="tick in 4" :key="tick" :x1="chartPadding" :x2="chartWidth - chartPadding"
                       :y1="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4"
-                      :y2="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4" stroke="#E5E7EB" stroke-width="1"
-                      stroke-dasharray="4 6" />
+                      :y2="chartPadding + (tick * (chartHeight - chartPadding * 2)) / 4" stroke="#E5E7EB"
+                      stroke-width="1" stroke-dasharray="4 6" />
                     <path :d="trendLinePath" fill="none" stroke="#31949A" stroke-width="3" stroke-linecap="round"
                       stroke-linejoin="round" />
                     <circle v-for="(point, index) in forecastTrendPoints" :key="`dot-${index}`" :cx="point.x"
                       :cy="point.y" r="4" fill="#fff" stroke="#31949A" stroke-width="2" />
                   </svg>
-                  <div
-                    class="trend-chart__labels"
-                    :style="{ gridTemplateColumns: `repeat(${forecastTrendPoints.length}, minmax(0, 1fr))` }"
-                  >
+                  <div class="trend-chart__labels"
+                    :style="{ gridTemplateColumns: `repeat(${forecastTrendPoints.length}, minmax(0, 1fr))` }">
                     <span v-for="(point, index) in forecastTrendPoints" :key="`label-${index}`">
                       <span class="trend-chart__label-time">{{ point.label.time }}</span>
                       <span class="trend-chart__label-date">{{ point.label.date }}</span>

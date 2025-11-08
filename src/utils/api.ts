@@ -62,6 +62,7 @@ const OBSTACLE_REPORT_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/
 const OBSTACLE_ISSUE_LIST_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/getByStatus';
 const OBSTACLE_ISSUE_STATUS_ENDPOINT = 'https://ynn22-standing-backend.hf.space/issue/update';
 const ROAD_RISK_ENDPOINT = 'https://ynn22-standing-backend.hf.space/map/analyze_road_risk';
+const ROAD_RISK_FALLBACK_PATH = '/mock/road_risk_level5.json';
 
 type PoliceNewsRecord = {
   roadtype?: string;
@@ -361,6 +362,52 @@ const extractCoord = (record: RoadRiskRecord, target: 'start' | 'end'): LatLng |
   return null;
 };
 
+const resolveRoadRecords = (payload: unknown): RoadRiskRecord[] => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (typeof payload === 'object') {
+    const withData = payload as { data?: unknown; roads?: RoadRiskRecord[] };
+    if (Array.isArray(withData.roads)) {
+      return withData.roads;
+    }
+    if (
+      withData.data &&
+      typeof withData.data === 'object' &&
+      Array.isArray((withData.data as { roads?: RoadRiskRecord[] }).roads)
+    ) {
+      return (withData.data as { roads?: RoadRiskRecord[] }).roads ?? [];
+    }
+    if (Array.isArray((withData as { data?: RoadRiskRecord[] }).data)) {
+      return (withData as { data?: RoadRiskRecord[] }).data ?? [];
+    }
+  }
+  return [];
+};
+
+const normalizeRoadRecords = (records: RoadRiskRecord[], fallbackRisk: number) =>
+  records
+    .map((record, index) => {
+      const start = extractCoord(record, 'start');
+      const end = extractCoord(record, 'end');
+      if (!start || !end) {
+        return null;
+      }
+      const windSpeed = toNumber(record.wind_speed) ?? 0;
+      const risk = toNumber(record.risk_level) ?? fallbackRisk;
+      return {
+        id: record.id ?? `risk-${risk}-${index}`,
+        name: record.road_name || record.name || `高風險路段 ${index + 1}`,
+        windSpeed,
+        direction: ensureWindDirectionWord(record.wind_direction),
+        note: record.note || record.description || '避開該路段以確保行車安全。',
+        riskLevel: risk,
+        start,
+        end,
+        updatedAt: record.updated_at ?? record.last_update
+      } as SafeRouteSegment;
+    })
+    .filter((segment): segment is SafeRouteSegment => Boolean(segment));
+
 export const fetchRoadRiskSegments = async (
   riskLevel = 5
 ): Promise<SafeRouteSegment[]> => {
@@ -374,38 +421,21 @@ export const fetchRoadRiskSegments = async (
     if (!response.ok) {
       throw new Error(`road risk API failed: ${response.status}`);
     }
-    const payload = (await response.json()) as RoadRiskRecord[] | { data?: RoadRiskRecord[] };
-    const records = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.data)
-        ? payload.data
-        : [];
-
-    return records
-      .map((record, index) => {
-        const start = extractCoord(record, 'start');
-        const end = extractCoord(record, 'end');
-        if (!start || !end) {
-          return null;
-        }
-        const windSpeed = toNumber(record.wind_speed) ?? 0;
-        const risk = toNumber(record.risk_level) ?? riskLevel;
-        return {
-          id: record.id ?? `risk-${risk}-${index}`,
-          name: record.road_name || record.name || `高風險路段 ${index + 1}`,
-          windSpeed,
-          direction: ensureWindDirectionWord(record.wind_direction),
-          note: record.note || record.description || '避開該路段以確保行車安全。',
-          riskLevel: risk,
-          start,
-          end,
-          updatedAt: record.updated_at ?? record.last_update
-        } as SafeRouteSegment;
-      })
-      .filter((segment): segment is SafeRouteSegment => Boolean(segment));
+    const payload = await response.json();
+    return normalizeRoadRecords(resolveRoadRecords(payload), riskLevel);
   } catch (error) {
     console.warn('[API] fetch road risk segments failed', error);
-    return [];
+    try {
+      const fallbackResponse = await fetch(ROAD_RISK_FALLBACK_PATH);
+      if (!fallbackResponse.ok) {
+        throw new Error(`fallback file not available: ${fallbackResponse.status}`);
+      }
+      const fallbackPayload = await fallbackResponse.json();
+      return normalizeRoadRecords(resolveRoadRecords(fallbackPayload), riskLevel);
+    } catch (fallbackError) {
+      console.warn('[API] road risk fallback also failed', fallbackError);
+      return [];
+    }
   }
 };
 
