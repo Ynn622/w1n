@@ -111,7 +111,7 @@ const getTypeStyle = (type: ObstacleTypeOption, active: boolean) => {
               </p>
             </div>
           </div>
-          <div class="absolute right-4 bottom-4 flex flex-col gap-2">
+          <div class="absolute right-4 bottom-4 flex gap-2">
             <button
               type="button"
               class="rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-grey-700 shadow"
@@ -133,10 +133,10 @@ const getTypeStyle = (type: ObstacleTypeOption, active: boolean) => {
         <div class="mb-3 flex items-center justify-between">
           <div>
             <h2 class="text-lg font-bold text-grey-900">障礙類型</h2>
-            <p class="text-xs text-grey-500">請選擇一種類型，資訊會同步到地圖圖層</p>
+
           </div>
           <span class="text-xs font-semibold text-primary-500">
-            {{ selectedTypeLabel ? '已選：' + selectedTypeLabel : '尚未選擇' }}
+           請選擇一種類型，資訊會同步到地圖圖層
           </span>
         </div>
         <div class="type-scroll flex gap-3 overflow-x-auto pb-1">

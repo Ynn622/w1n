@@ -3,7 +3,6 @@ import { useRouter, useRoute } from 'vue-router';
 import HomeIcon from '@/assets/navicons/Setting.png';
 import TrafficIcon from '@/assets/navicons/Traffic.png';
 import SafeIcon from '@/assets/navicons/SafeNavigation.png';
-import WindIcon from '@/assets/navicons/Wind.png';
 import ReportIcon from '@/assets/navicons/Report.png';
 
 const router = useRouter();
@@ -13,8 +12,7 @@ const navItems = [
   { name: 'home', label: '首頁', icon: HomeIcon },
   { name: 'traffic', label: '即時路況', icon: TrafficIcon },
   { name: 'safeNavigation', label: '安全導航', icon: SafeIcon },
-  { name: 'report', label: '障礙回報', icon: ReportIcon },
-  { name: 'wind', label: '風況資訊', icon: WindIcon }
+  { name: 'report', label: '障礙回報', icon: ReportIcon }
 ];
 
 const navigateTo = (name: string) => {

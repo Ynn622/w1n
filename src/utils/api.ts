@@ -217,3 +217,29 @@ export const getObstacleReportData = (): ObstacleReportData => ({
     { id: 'others', label: '其他情況', icon: '⚠️', color: '#5B8DEF' }
   ]
 });
+
+export interface WindDetail {
+  location: string;
+  windSpeed: number;
+  unit: string;
+  updatedAt: string;
+  source: string;
+  maxWind: number;
+  avgWind: number;
+  direction: string;
+  riskLevel: number; // 0-5
+  riskLabel: string;
+}
+
+export const getWindDetail = (): WindDetail => ({
+  location: '台北市大安區',
+  windSpeed: 10.5,
+  unit: 'm/s',
+  updatedAt: new Date().toISOString(),
+  source: '資料來源：中央氣象局',
+  maxWind: 11.8,
+  avgWind: 10.3,
+  direction: '北北東',
+  riskLevel: 3,
+  riskLabel: '中度風險'
+});
