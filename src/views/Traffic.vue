@@ -71,6 +71,13 @@ const handleLayerClick = (layerId: TrafficTab['id']) => {
 const goHome = () => {
   router.push({ name: 'home' });
 };
+
+const openTrafficMap = () => {
+  if (!mapEmbedUrl) {
+    return;
+  }
+  window.open(mapEmbedUrl, '_blank', 'noopener');
+};
 </script>
 
 <template>
@@ -112,15 +119,27 @@ const goHome = () => {
 
       <!-- 地圖顯示區 -->
       <section class="flex-1 rounded-3xl border border-grey-100 shadow-lg">
-        <div class="map-shell relative h-full min-h-[70vh] overflow-hidden rounded-3xl">
+        <div class="map-embed map-embed--tall">
           <iframe
             :src="mapEmbedUrl"
             title="Taipei live traffic map"
-            class="h-full w-full border-0"
             loading="lazy"
             allowfullscreen
             referrerpolicy="no-referrer-when-downgrade"
           ></iframe>
+          <div class="map-embed__badge">即時路況</div>
+          <div class="map-embed__actions">
+            <button type="button" class="map-action-btn" @click="goHome">
+              回首頁
+            </button>
+            <button
+              type="button"
+              class="map-action-btn map-action-btn--primary"
+              @click="openTrafficMap"
+            >
+              開啟 Google Maps
+            </button>
+          </div>
 
           <!-- 浮動資訊卡 -->
           <Transition name="fade">
@@ -172,10 +191,6 @@ const goHome = () => {
 </template>
 
 <style scoped>
-.map-shell iframe {
-  filter: saturate(1.05);
-}
-
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;

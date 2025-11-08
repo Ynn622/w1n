@@ -98,6 +98,13 @@ const obstacleIconMap: Record<ObstacleTypeOption['id'], string> = {
   accident: AccidentIcon,
   others: OthersIcon
 };
+
+const openReportMap = () => {
+  if (!mapEmbedUrl) {
+    return;
+  }
+  window.open(mapEmbedUrl, '_blank', 'noopener');
+};
 </script>
 
 <template>
@@ -117,15 +124,15 @@ const obstacleIconMap: Record<ObstacleTypeOption['id'], string> = {
 
       <!-- 地圖區 -->
       <section class="rounded-3xl border border-grey-100 shadow-lg">
-        <div class="relative min-h-[40vh] overflow-hidden rounded-3xl">
+        <div class="map-embed">
           <iframe
             :src="mapEmbedUrl"
             title="障礙回報地圖"
-            class="h-full w-full border-0"
             loading="lazy"
             allowfullscreen
             referrerpolicy="no-referrer-when-downgrade"
           ></iframe>
+          <div class="map-embed__badge">障礙定位</div>
           <div class="absolute inset-x-4 top-4 rounded-2xl bg-white/95 p-4 shadow">
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-grey-500">Google Maps</p>
             <p class="mt-1 text-sm text-grey-700">
@@ -138,18 +145,16 @@ const obstacleIconMap: Record<ObstacleTypeOption['id'], string> = {
               </p>
             </div>
           </div>
-          <div class="absolute right-4 bottom-4 flex gap-2">
-            <button
-              type="button"
-              class="rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-grey-700 shadow"
-            >
+          <div class="map-embed__actions">
+            <button type="button" class="map-action-btn">
               重新定位
             </button>
             <button
               type="button"
-              class="rounded-full bg-primary-500 px-4 py-2 text-xs font-semibold text-white shadow-lg"
+              class="map-action-btn map-action-btn--primary"
+              @click="openReportMap"
             >
-              顯示詳細地址 >
+              顯示詳細地址
             </button>
           </div>
         </div>

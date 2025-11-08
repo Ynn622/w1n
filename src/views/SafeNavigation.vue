@@ -43,6 +43,13 @@ const getWindSegments = (speed: number) => {
   const ratio = Math.min(speed, maxSpeed) / maxSpeed;
   return Array.from({ length: segments }, (_, index) => ratio >= (index + 1) / segments);
 };
+
+const openSafeMap = () => {
+  if (!mapEmbedUrl) {
+    return;
+  }
+  window.open(mapEmbedUrl, '_blank', 'noopener');
+};
 </script>
 
 <template>
@@ -105,15 +112,23 @@ const getWindSegments = (speed: number) => {
 
       <!-- 路線規劃地圖區 -->
       <section class="rounded-3xl border border-grey-100 shadow-lg">
-        <div class="relative h-full min-h-[40vh] overflow-hidden rounded-3xl">
+        <div class="map-embed">
           <iframe
             :src="mapEmbedUrl"
             title="Safe navigation map"
-            class="h-full w-full border-0"
             loading="lazy"
             allowfullscreen
             referrerpolicy="no-referrer-when-downgrade"
           ></iframe>
+          <div class="map-embed__badge">導航預覽</div>
+          <div class="map-embed__actions">
+            <button type="button" class="map-action-btn" @click="resetNavigation">
+              清除輸入
+            </button>
+            <button type="button" class="map-action-btn map-action-btn--primary" @click="openSafeMap">
+              Google Maps
+            </button>
+          </div>
           <div class="absolute inset-x-4 top-4 rounded-2xl bg-white/95 p-4 shadow">
             <div v-if="selectedSegment">
               <p class="text-xs uppercase tracking-widest text-grey-500">已選路段</p>

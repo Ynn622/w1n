@@ -3,7 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BottomNav from '@/components/BottomNav.vue';
 import WindIcon from '@/assets/navicons/Wind.png';
-import { fetchPoliceNews, getHomeOverview, getWindDetail } from '@/utils/api';
+import {
+  fetchPoliceNews,
+  getHomeOverview,
+  getMapEmbedUrlFromCoords,
+  getWindDetail,
+  reverseGeocode
+} from '@/utils/api';
 
 const router = useRouter();
 
@@ -23,6 +29,12 @@ const {
 const newsList = ref(homeOverview.newsList);
 const previewNews = computed(() => newsList.value.slice(0, 2));
 const expandedNewsDescriptions = ref<Set<number>>(new Set());
+const locationLabel = ref(location);
+const isLocating = ref(false);
+const locationError = ref<string | null>(null);
+const userCoords = ref<{ lat: number; lng: number } | null>(null);
+const mapEmbedUrl = ref(googleMapEmbed);
+const canUseGeolocation = typeof window !== 'undefined' && 'geolocation' in navigator;
 
 const navigateTo = (routeName: string) => {
   router.push({ name: routeName });
@@ -154,6 +166,74 @@ const expandDescription = (id: number) => {
   expandedNewsDescriptions.value = next;
 };
 
+const openMapInGoogle = () => {
+  let externalUrl = mapEmbedUrl.value;
+  if (userCoords.value) {
+    const { lat, lng } = userCoords.value;
+    externalUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  }
+  window.open(externalUrl, '_blank', 'noopener');
+};
+
+const coordsToLabel = (lat: number, lng: number) =>
+  `緯度 ${lat.toFixed(5)}, 經度 ${lng.toFixed(5)}`;
+
+const isCoordinateLabel = (value?: string | null) => {
+  if (!value) {
+    return false;
+  }
+  const trimmed = value.trim();
+  return trimmed.startsWith('緯度') || /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(trimmed);
+};
+
+const updateLocationByCoords = async (lat: number, lng: number) => {
+  userCoords.value = { lat, lng };
+  mapEmbedUrl.value = getMapEmbedUrlFromCoords(lat, lng);
+  const address = await reverseGeocode(lat, lng);
+  if (address && !isCoordinateLabel(address)) {
+    locationLabel.value = address;
+  }
+};
+
+const requestUserLocation = () => {
+  if (!canUseGeolocation || typeof navigator === 'undefined') {
+    locationError.value = '此裝置不支援定位功能';
+    return;
+  }
+  isLocating.value = true;
+  locationError.value = null;
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      try {
+        await updateLocationByCoords(latitude, longitude);
+      } catch (error) {
+        console.warn('更新定位失敗', error);
+        locationError.value = '無法取得地址名稱';
+      } finally {
+        isLocating.value = false;
+      }
+    },
+    (error) => {
+      isLocating.value = false;
+      switch (error.code) {
+        case error.PERMISSION_DENIED:
+          locationError.value = '使用者拒絕授權定位';
+          break;
+        case error.POSITION_UNAVAILABLE:
+          locationError.value = '定位資訊不可用';
+          break;
+        case error.TIMEOUT:
+          locationError.value = '定位逾時，請重試';
+          break;
+        default:
+          locationError.value = '無法取得定位資訊';
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+  );
+};
+
 const loadPoliceNews = async () => {
   try {
     isNewsLoading.value = true;
@@ -214,6 +294,7 @@ onBeforeUnmount(() => {
 
 onMounted(() => {
   loadPoliceNews();
+  requestUserLocation();
 });
 </script>
 
@@ -224,11 +305,26 @@ onMounted(() => {
       <h2 class="text-3xl font-bold text-grey-900 ml-2">總覽</h2>
       <p class="text-sm font-bold text-grey-500 ml-2">目前位址：</p>
 
-      <section class="rounded-2xl bg-white px-5 py-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-
-
-        <div class="flex flex-col gap-1.5 text-center md:text-left">
-          <p class="text-base font-semibold text-grey-700">{{ location }}</p>
+      <section class="rounded-2xl bg-white px-4 py-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex-1 min-w-[200px]">
+            <p class="text-base font-semibold text-grey-900 break-words text-left">
+              {{ locationLabel }}
+            </p>
+            <p v-if="userCoords" class="text-xs text-grey-500 text-left">
+              經緯度：{{ userCoords.lat.toFixed(4) }}, {{ userCoords.lng.toFixed(4) }}
+            </p>
+            <p v-if="locationError" class="text-xs text-rose-500 text-left">
+              {{ locationError }}
+            </p>
+          </div>
+          <button
+            class="rounded-full border border-primary-500 px-6 py-1.5 text-xs font-semibold text-primary-500 shadow-sm"
+            @click="requestUserLocation"
+            :disabled="isLocating"
+          >
+            {{ isLocating ? '定位中...' : '更新定位' }}
+          </button>
         </div>
       </section>
 
@@ -300,13 +396,34 @@ onMounted(() => {
           </button>
         </div>
         <div class="route-card flex flex-col gap-3 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 p-3">
-          <!-- <div class="flex items-center justify-between text-sm text-grey-700">
-            <span>{{ mapPreview.road }}</span>
-            <span>{{ mapPreview.landmark }}</span>
-          </div> -->
-          <div class="h-48 overflow-hidden rounded-xl bg-white shadow-inner">
-            <iframe :src="googleMapEmbed" title="Google Maps" class="h-full w-full border-0" loading="lazy"
-              allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+          <div class="map-embed map-embed--compact">
+            <iframe
+              :src="mapEmbedUrl"
+              title="Google Maps"
+              class="map-embed__iframe"
+              loading="lazy"
+              allowfullscreen
+              referrerpolicy="no-referrer-when-downgrade"
+            ></iframe>
+            <div class="map-embed__badge">
+              {{ mapPreview.road }}・{{ mapPreview.landmark }}
+            </div>
+            <div class="map-embed__actions">
+              <button
+                type="button"
+                class="map-action-btn"
+                @click="requestUserLocation"
+              >
+                重新定位
+              </button>
+              <button
+                type="button"
+                class="map-action-btn map-action-btn--primary"
+                @click="openMapInGoogle"
+              >
+                開啟 Google Maps
+              </button>
+            </div>
           </div>
           <div class="rounded-xl border border-dashed border-primary-300 bg-white/70 p-3 text-sm text-grey-700">
             <div class="font-semibold text-grey-900">街口資訊 (API 預留)</div>

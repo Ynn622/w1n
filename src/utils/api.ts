@@ -50,6 +50,7 @@ export interface NewsItem {
 }
 
 const POLICE_NEWS_ENDPOINT = 'https://ynn22-standing-backend.hf.space/news/police_local';
+const GOOGLE_GEOCODE_ENDPOINT = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 type PoliceNewsRecord = {
   roadtype?: string;
@@ -318,3 +319,32 @@ export const getWindDetail = (): WindDetail => ({
     { hour: 24, value: 9.5 }
   ]
 });
+
+export const getMapEmbedUrlFromCoords = (lat: number, lng: number): string => {
+  if (VITE_GOOGLE_MAPS_API_KEY) {
+    const base = 'https://www.google.com/maps/embed/v1/view';
+    return `${base}?key=${VITE_GOOGLE_MAPS_API_KEY}&center=${lat},${lng}&zoom=15&maptype=roadmap`;
+  }
+  return `https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed`;
+};
+
+export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+  if (!VITE_GOOGLE_MAPS_API_KEY) {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+  const url = `${GOOGLE_GEOCODE_ENDPOINT}?latlng=${lat},${lng}&key=${VITE_GOOGLE_MAPS_API_KEY}&language=zh-TW`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Geocode request failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload.status !== 'OK' || !payload.results?.length) {
+      return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+    return payload.results[0].formatted_address as string;
+  } catch (error) {
+    console.warn('[API] reverse geocode failed', error);
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+};
