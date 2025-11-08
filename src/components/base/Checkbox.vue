@@ -8,7 +8,10 @@ const props = defineProps<{
   triggerValidate?: boolean;
 }>();
 
-const inputValue = defineModel({ default: [] });
+const inputValue = defineModel<string[]>({
+  required: false,
+  default: () => []
+});
 
 const isValidate = ref(true);
 

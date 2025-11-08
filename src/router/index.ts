@@ -5,9 +5,33 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    component: () => import('@/views/test.vue'),
+    component: () => import('@/views/Home.vue'),
     meta: {
-      title: '首頁'
+      title: '首頁 - 即時風況'
+    }
+  },
+  {
+    path: '/traffic',
+    name: 'traffic',
+    component: () => import('@/views/Traffic.vue'),
+    meta: {
+      title: '即時路況'
+    }
+  },
+  {
+    path: '/wind',
+    name: 'wind',
+    component: () => import('@/views/Wind.vue'),
+    meta: {
+      title: '風況資訊'
+    }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/Settings.vue'),
+    meta: {
+      title: '偏好設定'
     }
   },
   {
@@ -44,9 +68,9 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   // 設置頁面標題
   if (to.meta.title) {
-    document.title = `${to.meta.title} - TownPass Services`;
+    document.title = `${to.meta.title} - 即時風況`;
   } else {
-    document.title = 'TownPass Services';
+    document.title = '即時風況';
   }
 
   next();
