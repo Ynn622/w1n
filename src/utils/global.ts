@@ -11,6 +11,7 @@ export function useUserInfo() {
   const messageHandler = (event: MessageEvent) => {
     try {
       const response = JSON.parse(event.data);
+      alert('收到來自 App 的用戶資訊回應');
       
       if (response.name === 'userinfo') {
         userInfo.value = response.data;
@@ -18,6 +19,7 @@ export function useUserInfo() {
         isLoading.value = false;
       }
     } catch (err) {
+      alert('解析用戶資訊失敗');
       console.error('解析用戶資訊失敗:', err);
       error.value = '解析用戶資訊失敗';
       isLoading.value = false;
@@ -45,6 +47,7 @@ export function useUserInfo() {
         data: null
       }));
     } else {
+      alert('flutterObject 不存在，可能不在 App 環境中');
       console.warn('flutterObject 不存在，可能不在 App 環境中');
       error.value = '不在 App 環境中';
     }
@@ -71,3 +74,19 @@ export function useUserInfo() {
     requestUserInfo
   };
 }
+
+/**
+ * @param name - 傳送給 app 讓 app 知道 web 需要什麼類型的溝通
+ * @param data - 需要傳送給 app 的資料
+ *
+ * <strong>重要提醒：</strong>建議都在 /views 呼叫此 hook，為了方便跟 useHandleConnectionData 管理。
+ */
+export const useConnectionMessage = <T>(name: string, data: T) => {
+  // @ts-ignore
+  if (typeof flutterObject !== 'undefined' && flutterObject) {
+    const postInfo = JSON.stringify({ name, data });
+
+    // @ts-ignore
+    flutterObject.postMessage(postInfo);
+  }
+};

@@ -514,12 +514,16 @@ onActivated(() => {
     autoRequestLocation();
   }
 });
+
+const raw = localStorage.getItem('app_user_info');
+const userInfo = raw ? JSON.parse(raw) : null;
 </script>
 
 <template>
   <div class="page-shell min-h-screen bg-[#F8F8F8] pb-24" :class="{ 'modal-open': isWindModalOpen || isNewsModalOpen }">
     <main class="mx-auto flex max-w-5xl flex-col gap-2 px-4 pt-6">
       <!-- ① 標題區 -->
+       <h2>{{ userInfo }}</h2>
       <h2 class="text-3xl font-bold text-grey-900 ml-2">總覽</h2>
       <p class="text-sm font-bold text-grey-500 ml-2">目前位址：</p>
 

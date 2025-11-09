@@ -490,6 +490,8 @@ export interface ObstacleIssueRecord {
 export const submitObstacleReport = async (
   payload: SubmitObstaclePayload
 ): Promise<SubmitObstacleResult> => {
+  const { requestUserInfo } = useUserInfo();
+  requestUserInfo();
   const url = new URL(OBSTACLE_REPORT_ENDPOINT);
   url.searchParams.set('address', payload.address);
   url.searchParams.set('obstacle_type', payload.obstacleType);
