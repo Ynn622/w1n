@@ -499,7 +499,7 @@ export const submitObstacleReport = async (
   url.searchParams.set('address', payload.address);
   url.searchParams.set('obstacle_type', payload.obstacleType);
   url.searchParams.set('description', payload.description);
-  url.searchParams.set('modtified_userid', (useUserInfo().userId.value) ? useUserInfo().userId.value : 'visitor');
+  url.searchParams.set('modtified_userid', (userInfo.id) ? userInfo.id : 'visitor');
   try {
     const response = await fetch(url.toString(), {
       method: 'POST',
