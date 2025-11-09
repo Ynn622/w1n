@@ -294,7 +294,7 @@ const openTrafficMap = () => {
             v-for="filter in filters"
             :key="filter.id"
             type="button"
-            class="w-full rounded-full border px-3 py-1.5 text-center text-sm font-medium transition-all"
+            class="w-full rounded-full border px-3 py-1.5 text-center text-xs font-medium transition-all"
             :class="
               selectedFilters.includes(filter.id)
                 ? 'shadow-sm text-white'
@@ -313,7 +313,7 @@ const openTrafficMap = () => {
               }"
             @click="toggleFilter(filter.id)"
           >
-            <div class="flex items-center justify-center text-xl text-center font-semibold">
+            <div class="flex items-center justify-center text-base text-center font-semibold">
               <span>{{ filter.label }}</span>
             </div>
 
